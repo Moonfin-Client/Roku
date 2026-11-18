@@ -10,11 +10,13 @@ import "pkg:/source/utils/calendarEntries.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/externalList.bs"
+import "pkg:/source/utils/homeCache.bs"
 import "pkg:/source/utils/HomeRecommendations.bs"
 import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/libraryScope.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/multiserver.bs"
 import "pkg:/source/utils/parentalControls.bs"
 import "pkg:/source/utils/parentalFilter.bs"
 import "pkg:/source/utils/posterLabels.bs"
@@ -23,6 +25,7 @@ import "pkg:/source/utils/seasonalRow.bs"
 import "pkg:/source/utils/seerrBrowseRows.bs"
 import "pkg:/source/utils/seerrSliders.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
+import "pkg:/source/utils/userViews.bs"
 
 ' Items a "Recently Added" row holds, both per library and after libraries are merged
 const LATEST_MEDIA_LIMIT = 16
@@ -148,7 +151,7 @@ end function
 function loadLibraries() as object
     results = []
 
-    data = api.GetUserViews({ "userId": m.global.session.user.id })
+    data = userViews.Get(sessionNow().user.id)
 
     if not isChainValid(data, "items") then return results
 
@@ -167,7 +170,7 @@ function loadLibraries() as object
     for each item in data.LookupCI("items")
         id = item.LookupCI("Id")
         name = item.LookupCI("name")
-        tmp = createSGNode("HomeData")
+        tmp = newHomeCard()
         tmp.json = {
             id: id,
             name: name,
@@ -217,9 +220,10 @@ function loadLatestMedia() as object
             if widened > fetchLimit then fetchLimit = widened
         end if
         seenIds = {}
+        userId = chainLookup(sessionNow(), "user.id")
         for each pId in targetParentIds
             params = {
-                userId: m.global.session.user.id,
+                userId: userId,
                 limit: fetchLimit,
                 parentId: pId,
                 groupItems: true,
@@ -253,9 +257,10 @@ function loadLatestMedia() as object
 
     if not isValidAndNotEmpty(data) then return results
 
+    libraryId = m.top.itemId
     for each item in data
         if not isStringEqual(item.Type, ItemType.BOOK)
-            tmp = createSGNode("HomeData")
+            tmp = newHomeCard()
 
             tmp.json = {
                 id: item.LookupCI("Id"),
@@ -287,7 +292,7 @@ function loadLatestMedia() as object
                 ParentBackdropItemId: item.LookupCI("ParentBackdropItemId"),
                 SeriesPrimaryImageTag: item.LookupCI("SeriesPrimaryImageTag"),
                 BackdropImageTags: item.LookupCI("BackdropImageTags"),
-                LibraryId: m.top.itemId
+                LibraryId: libraryId
             }
             results.push(tmp)
         end if
@@ -410,7 +415,7 @@ function loadRecentlyReleased() as object
     items = data.items
     if hideWatched then items = recentRows.WithoutWatched(items)
     for each item in items
-        tmp = createSGNode("HomeData")
+        tmp = newHomeCard()
 
         albumArtistID = invalid
 
@@ -458,7 +463,7 @@ end function
 ' Wraps a Jellyfin item in a HomeData node using the standard home row fields. An item from
 ' another signed in server carries that server, so its art and playback go there.
 function makeHomeItem(item as object, serverData = invalid as dynamic) as object
-    tmp = createSGNode("HomeData")
+    tmp = newHomeCard()
     json = {
         Id: item.LookupCI("Id"),
         name: item.LookupCI("name"),
@@ -1285,7 +1290,7 @@ function loadContinueWatching() as object
 
 
     for each item in data.Items
-        tmp = createSGNode("HomeData")
+        tmp = newHomeCard()
         tmp.Id = item.LookupCI("Id")
         tmp.name = item.LookupCI("name")
         tmp.type = item.LookupCI("Type")
@@ -1344,13 +1349,13 @@ function loadMergedContinueWatching() as object
         SortBy: "DatePlayed",
         SortOrder: "Descending",
         ImageTypeLimit: 1,
-        UserId: m.global.session.user.id,
+        UserId: chainLookup(sessionNow(), "user.id"),
         DisableFirstEpisode: false,
         limit: 25,
         EnableTotalRecordCount: false
     }
 
-    maxDaysInNextUp = m.global.session.user.settings["ui.details.maxdaysnextup"].ToInt()
+    maxDaysInNextUp = sessionNow().user.settings["ui.details.maxdaysnextup"].ToInt()
     if isValid(maxDaysInNextUp)
         if maxDaysInNextUp > 0
             dateToday = CreateObject("roDateTime")
@@ -1369,7 +1374,7 @@ function loadMergedContinueWatching() as object
     if isChainValid(resumeData, "Items")
         for each item in resumeData.Items
             if isHiddenByMap(item, hiddenCW, false) then continue for
-            tmp = createSGNode("HomeData")
+            tmp = newHomeCard()
             tmp.Id = item.LookupCI("Id")
             tmp.name = item.LookupCI("name")
             tmp.type = item.LookupCI("Type")
@@ -1403,28 +1408,39 @@ function loadMergedContinueWatching() as object
         end for
     end if
 
-    recentPlayedParams = {
-        includeItemTypes: "Episode",
-        filters: "IsPlayed",
-        recursive: true,
-        sortBy: "DatePlayed",
-        sortOrder: "Descending",
-        limit: 100,
-        fields: "UserData,SeriesId",
-        UserId: m.global.session.user.id
-    }
-    recentPlayedResponse = api.items.get(recentPlayedParams)
-
-    ' Create a lookup map of series LastPlayedDate to populate nextup
-    seriesLastPlayedMap = {}
-    if isChainValid(recentPlayedResponse, "Items")
-        for each item in recentPlayedResponse.Items
-            sId = item.LookupCI("SeriesId")
+    ' Next Up cards without a last played date take their series' from the recently played episodes.
+    ' Silo dates its cards itself, and then the 100 episodes aren't read
+    needsDates = false
+    if isChainValid(nextUpData, "Items")
+        for each item in nextUpData.Items
             userData = item.LookupCI("UserData")
-            if isValid(sId) and isValid(userData) and seriesLastPlayedMap[sId] = invalid
-                seriesLastPlayedMap[sId] = userData["LastPlayedDate"]
-            end if
+            if not isValid(userData) or userData["LastPlayedDate"] = invalid then needsDates = true
         end for
+    end if
+    seriesLastPlayedMap = {}
+    if needsDates
+        recentPlayedParams = {
+            includeItemTypes: "Episode",
+            filters: "IsPlayed",
+            recursive: true,
+            sortBy: "DatePlayed",
+            sortOrder: "Descending",
+            limit: 100,
+            fields: "UserData,SeriesId",
+            UserId: chainLookup(sessionNow(), "user.id")
+        }
+        recentPlayedResponse = api.items.get(recentPlayedParams)
+
+        ' Create a lookup map of series LastPlayedDate to populate nextup
+        if isChainValid(recentPlayedResponse, "Items")
+            for each item in recentPlayedResponse.Items
+                sId = item.LookupCI("SeriesId")
+                userData = item.LookupCI("UserData")
+                if isValid(sId) and isValid(userData) and seriesLastPlayedMap[sId] = invalid
+                    seriesLastPlayedMap[sId] = userData["LastPlayedDate"]
+                end if
+            end for
+        end if
     end if
     ' Add Next Up items that aren't already in Continue Watching
     if isChainValid(nextUpData, "Items")
@@ -1439,7 +1455,7 @@ function loadMergedContinueWatching() as object
             if isHiddenByMap(item, hiddenNU, true) then continue for
             ' Only add if not already in resume items
             if not resumeItemIds.DoesExist(itemId)
-                tmp = createSGNode("HomeData")
+                tmp = newHomeCard()
                 tmp.json = {
                     Id: itemId,
                     name: item.LookupCI("name"),
@@ -1572,7 +1588,7 @@ function loadContinueListening() as object
     if not isChainValid(data, "Items") then return results
 
     for each item in data.Items
-        tmp = createSGNode("HomeData")
+        tmp = newHomeCard()
         tmp.Id = item.LookupCI("Id")
         tmp.name = item.LookupCI("name")
         tmp.type = item.LookupCI("Type")
@@ -1726,7 +1742,7 @@ function loadSeasons() as object
     if not isChainValid(data, "Items") then return results
 
     for each season in data.Items
-        tmp = createSGNode("HomeData")
+        tmp = newHomeCard()
         tmp.json = {
             id: season.LookupCI("Id"),
             name: season.LookupCI("Name"),
@@ -1781,7 +1797,7 @@ function loadLiveTVOnNow() as object
     if not isChainValid(data, "Items") then return results
 
     for each item in data.Items
-        tmp = createSGNode("HomeData")
+        tmp = newHomeCard()
         tmp.json = {
             id: item.LookupCI("Id"),
             name: item.LookupCI("name"),
@@ -1835,7 +1851,7 @@ function loadNextUpForShow() as object
 
     if isChainValid(data, "Items")
         for each item in data.Items
-            tmp = createSGNode("HomeData")
+            tmp = newHomeCard()
             tmp.json = item
 
             ' Override imageWidth to 502 for wide episode display
@@ -1892,7 +1908,7 @@ function loadNextUp() as object
     if isChainValid(data, "Items")
         for each item in data.Items
             if isHiddenByMap(item, hiddenNU, true) then continue for
-            tmp = createSGNode("HomeData")
+            tmp = newHomeCard()
             tmp.json = item
             results.push(tmp)
             count++
@@ -1904,7 +1920,7 @@ function loadNextUp() as object
     end if
 
     if addViewAll
-        tmp = createSGNode("HomeData")
+        tmp = newHomeCard()
         tmp.type = ItemType.COLLECTIONFOLDER
         tmp.json = {
             IsFolder: true,
@@ -1941,7 +1957,7 @@ function loadFavorites() as object
     for each item in data.Items
         if inArray([ItemType.BOOK, ItemType.AUDIO], item.type) then continue for
 
-        tmp = createSGNode("HomeData")
+        tmp = newHomeCard()
 
         params = {
             Tags: item.PrimaryImageTag,
@@ -1999,7 +2015,7 @@ function loadMyList(views = invalid as dynamic) as object
     results = []
 
     data = views
-    if not isChainValid(data, "Items") then data = api.GetUserViews({ "userId": m.global.session.user.id })
+    if not isChainValid(data, "Items") then data = userViews.Get(m.global.session.user.id)
     if not isChainValid(data, "Items") then return results
 
     myListPlaylist = invalid
@@ -2036,7 +2052,7 @@ function loadMyList(views = invalid as dynamic) as object
     for each item in myListData.Items
         if inArray([ItemType.BOOK, ItemType.AUDIO], item.type) then continue for
 
-        tmp = createSGNode("HomeData")
+        tmp = newHomeCard()
 
         params = {
             Tags: item.PrimaryImageTag,
@@ -2073,7 +2089,7 @@ function loadMyList(views = invalid as dynamic) as object
     end for
 
     if myListData.Items.count() > 3
-        tmp = createSGNode("HomeData")
+        tmp = newHomeCard()
         tmp.id = playlistID
         tmp.type = ItemType.COLLECTIONFOLDER
         tmp.json = {
@@ -2195,28 +2211,53 @@ end function
 
 ' Libraries, genres, studios, playlists and single lookups carry no rating, so only rows of titles
 ' are filtered
-sub loadItems()
-    if not isValidAndNotEmpty(m.global.session.user.id)
+sub loadItemsFor()
+    ' A task's read of m.top waits for the render thread, which is busy drawing Home while the rows
+    ' load, so the row kind is read once
+    itemsToLoad = m.top.itemsToLoad
+    if not isValidAndNotEmpty(chainLookup(sessionNow(), "user.id"))
         m.top.content = []
+        return
+    end if
+
+    ' Home asks for the labels of all its rows in one go, after they have landed
+    if isStringEqual(itemsToLoad, "posterLabels")
+        ids = m.top.itemIds
+        found = {}
+        if type(ids) = "roArray"
+            if posterLabels.Wanted() and ids.count() > 0 then found = posterLabels.Fetch(ids)
+        end if
+        m.top.labels = found
+        return
+    end if
+
+    ' Rows saved at the last launch are read on their own task, and Home builds the rows from them
+    if isStringEqual(itemsToLoad, "homeCacheRead")
+        cacheRead = m.top.cacheRead
+        records = []
+        if type(cacheRead) = "roAssociativeArray" and homeCache.isText(cacheRead.dir) and homeCache.isText(cacheRead.key)
+            records = withoutBlockedCachedItems(homeCache.ReadRows(cacheRead.dir, cacheRead.key))
+        end if
+        m.top.cachedRecords = records
         return
     end if
 
     ' A picked collection, genre or playlist shares the pluginDynamic prefix with the rows
     ' the plugin proxies, so it has to be recognised before that branch claims it
-    picked = homeRowLayout.SourceFromId(m.top.itemsToLoad)
+    picked = homeRowLayout.SourceFromId(itemsToLoad)
     if isValid(picked)
-        m.top.content = posterLabels.Attach(parentalControls.WithoutBlockedItems(loadPickedRow(picked)))
+        m.top.content = withLabels(parentalControls.WithoutBlockedItems(loadPickedRow(picked)))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "pickable")
+    if isStringEqual(itemsToLoad, "pickable")
         m.top.content = loadPickable(m.top.itemId)
         return
     end if
 
     ' Row ids reach us lowercased when they come from settings and camel cased when they
     ' come from the server, so match the prefix case-insensitively
-    lowerItemsToLoad = LCase(m.top.itemsToLoad)
+    lowerItemsToLoad = LCase(itemsToLoad)
     if lowerItemsToLoad = "seasonal"
         m.top.content = loadSeasonalRow()
         return
@@ -2230,62 +2271,62 @@ sub loadItems()
     ' A chart's titles come from outside the library, so one with no rating was never looked
     ' up and stays out once a rating is blocked. Seerr carries no ratings at all, so its rows
     ' keep the usual filter.
-    if homeRowLayout.IsSliderRow(m.top.itemsToLoad)
-        m.top.content = parentalControls.WithoutBlockedItems(loadSeerrSliderRow(m.top.itemsToLoad))
+    if homeRowLayout.IsSliderRow(itemsToLoad)
+        m.top.content = parentalControls.WithoutBlockedItems(loadSeerrSliderRow(itemsToLoad))
         return
     end if
 
-    if isValid(homeRowLayout.ExternalChart(lowerItemsToLoad)) or lowerItemsToLoad.startsWith("imdb_") or lowerItemsToLoad.startsWith("tmdb_") or lowerItemsToLoad.startsWith("plugindynamic:")
-        m.top.content = posterLabels.Attach(parentalControls.WithoutUnratedOrBlockedItems(loadCustomDynamicList(m.top.itemsToLoad, m.top.additionalData)))
+    if isOutsideTitlesRow(itemsToLoad)
+        m.top.content = withLabels(parentalControls.WithoutUnratedOrBlockedItems(loadCustomDynamicList(itemsToLoad, m.top.additionalData)))
         return
     end if
 
     if lowerItemsToLoad.startsWith("seerr_")
-        m.top.content = parentalControls.WithoutBlockedItems(loadCustomDynamicList(m.top.itemsToLoad, m.top.additionalData))
+        m.top.content = parentalControls.WithoutBlockedItems(loadCustomDynamicList(itemsToLoad, m.top.additionalData))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "libraries")
+    if isStringEqual(itemsToLoad, "libraries")
         m.top.content = loadLibraries()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "latest")
-        m.top.content = posterLabels.Attach(parentalControls.WithoutBlockedItems(loadLatestMedia()))
+    if isStringEqual(itemsToLoad, "latest")
+        setRowContent(withLabels(parentalControls.WithoutBlockedItems(loadLatestMedia())))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "recentlyReleased")
-        m.top.content = posterLabels.Attach(parentalControls.WithoutBlockedItems(loadRecentlyReleased()))
+    if isStringEqual(itemsToLoad, "recentlyReleased")
+        setRowContent(withLabels(parentalControls.WithoutBlockedItems(loadRecentlyReleased())))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "sinceYouWatched")
-        m.top.content = posterLabels.Attach(parentalControls.WithoutBlockedItems(loadSinceYouWatched()))
+    if isStringEqual(itemsToLoad, "sinceYouWatched")
+        m.top.content = withLabels(parentalControls.WithoutBlockedItems(loadSinceYouWatched()))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "rewatch")
-        m.top.content = posterLabels.Attach(parentalControls.WithoutBlockedItems(loadRewatch()))
+    if isStringEqual(itemsToLoad, "rewatch")
+        m.top.content = withLabels(parentalControls.WithoutBlockedItems(loadRewatch()))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "continue")
-        m.top.content = posterLabels.Attach(parentalControls.WithoutBlockedItems(loadContinueWatching()))
+    if isStringEqual(itemsToLoad, "continue")
+        setRowContent(withLabels(parentalControls.WithoutBlockedItems(loadContinueWatching())))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "mergedContinueWatching")
-        m.top.content = posterLabels.Attach(parentalControls.WithoutBlockedItems(loadMergedContinueWatching()))
+    if isStringEqual(itemsToLoad, "mergedContinueWatching")
+        setRowContent(withLabels(parentalControls.WithoutBlockedItems(loadMergedContinueWatching())))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "nextUp")
-        m.top.content = posterLabels.Attach(parentalControls.WithoutBlockedItems(loadNextUp()))
+    if isStringEqual(itemsToLoad, "nextUp")
+        setRowContent(withLabels(parentalControls.WithoutBlockedItems(loadNextUp())))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "seasonOfEpisodes")
+    if isStringEqual(itemsToLoad, "seasonOfEpisodes")
         try
             m.top.content = loadSeasonOfEpisodes()
         catch _e
@@ -2294,62 +2335,62 @@ sub loadItems()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "favorites")
-        m.top.content = posterLabels.Attach(parentalControls.WithoutBlockedItems(loadFavorites()))
+    if isStringEqual(itemsToLoad, "favorites")
+        setRowContent(withLabels(parentalControls.WithoutBlockedItems(loadFavorites())))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "mylist")
-        m.top.content = posterLabels.Attach(parentalControls.WithoutBlockedItems(loadMyList()))
+    if isStringEqual(itemsToLoad, "mylist")
+        setRowContent(withLabels(parentalControls.WithoutBlockedItems(loadMyList())))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "playlists")
+    if isStringEqual(itemsToLoad, "playlists")
         m.top.content = loadPlaylists()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "homeplaylists")
+    if isStringEqual(itemsToLoad, "homeplaylists")
         m.top.content = loadHomePlaylists()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "collections")
+    if isStringEqual(itemsToLoad, "collections")
         m.top.content = parentalControls.WithoutBlockedItems(loadCollections())
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "genres")
+    if isStringEqual(itemsToLoad, "genres")
         m.top.content = loadGenres()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "studios")
+    if isStringEqual(itemsToLoad, "studios")
         m.top.content = loadStudios()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "radarr_calendar")
+    if isStringEqual(itemsToLoad, "radarr_calendar")
         m.top.content = loadArrCalendar("radarr")
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "sonarr_calendar")
+    if isStringEqual(itemsToLoad, "sonarr_calendar")
         m.top.content = loadArrCalendar("sonarr")
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "audio")
+    if isStringEqual(itemsToLoad, "audio")
         m.top.content = loadAudio()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "isInMyList")
+    if isStringEqual(itemsToLoad, "isInMyList")
         m.top.content = loadIsInMyList()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "backdropImage")
+    if isStringEqual(itemsToLoad, "backdropImage")
         serverData = loadItemsTaskServerData()
         if isValid(serverData)
             m.top.content = [backdropImageForServer(m.top.itemId, serverData)]
@@ -2359,7 +2400,7 @@ sub loadItems()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "audioStream")
+    if isStringEqual(itemsToLoad, "audioStream")
         serverData = loadItemsTaskServerData()
         if isValid(serverData)
             m.top.content = [loadAudioStreamForServer(m.top.itemId, serverData)]
@@ -2369,7 +2410,7 @@ sub loadItems()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "metaData")
+    if isStringEqual(itemsToLoad, "metaData")
         serverData = loadItemsTaskServerData()
         if isValid(serverData)
             m.top.content = [ItemMetaDataForServer(serverData, m.top.itemId)]
@@ -2379,62 +2420,142 @@ sub loadItems()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "personSeries")
+    if isStringEqual(itemsToLoad, "personSeries")
         m.top.content = loadItemsByPerson(ItemType.SERIES)
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "nextup")
+    if isStringEqual(itemsToLoad, "nextup")
         m.top.content = loadNextUpForShow()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "personTVShows")
+    if isStringEqual(itemsToLoad, "personTVShows")
         m.top.content = loadItemsByPerson(ItemType.EPISODE, { MaxWidth: 502, MaxHeight: 300 })
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "personMovies")
+    if isStringEqual(itemsToLoad, "personMovies")
         m.top.content = loadItemsByPerson(ItemType.MOVIE)
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "people")
+    if isStringEqual(itemsToLoad, "people")
         m.top.content = loadPeople()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "likethis")
+    if isStringEqual(itemsToLoad, "likethis")
         m.top.content = loadMoreLikeThis()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "similarartists")
+    if isStringEqual(itemsToLoad, "similarartists")
         m.top.content = loadSimilarArtists()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "specialfeatures")
+    if isStringEqual(itemsToLoad, "specialfeatures")
         m.top.content = loadSpecialFeatures()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "seasons")
+    if isStringEqual(itemsToLoad, "seasons")
         m.top.content = loadSeasons()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "continueListening")
-        m.top.content = parentalControls.WithoutBlockedItems(loadContinueListening())
+    if isStringEqual(itemsToLoad, "continueListening")
+        setRowContent(parentalControls.WithoutBlockedItems(loadContinueListening()))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "onNow")
+    if isStringEqual(itemsToLoad, "onNow")
         m.top.content = parentalControls.WithoutBlockedItems(loadLiveTVOnNow())
         return
     end if
 
     m.top.content = []
+end sub
+
+' A Home card that builds its image URLs from this run's server details, read once per run
+function newHomeCard() as object
+    if not isValid(m.imageContext) then m.imageContext = activeImageContext()
+    card = createSGNode("HomeData")
+    card.imageContext = m.imageContext
+    return card
+end function
+
+' Reads this run's server details afresh, and the deferred-labels switch once, from the task's own field
+sub loadItems()
+    m.imageContext = invalid
+    m.deferLabels = m.top.deferPosterLabels
+    loadItemsFor()
+end sub
+
+' Whether a row's titles come from a chart outside the library, whose unrated titles were never looked up
+' (picked rows and Seerr sliders share the plugin's prefix but not its charts)
+function isOutsideTitlesRow(rowId as string) as boolean
+    if isValid(homeRowLayout.SourceFromId(rowId)) or homeRowLayout.IsSliderRow(rowId) then return false
+    lowerRowId = LCase(rowId)
+    if isValid(homeRowLayout.ExternalChart(lowerRowId)) then return true
+    return lowerRowId.startsWith("imdb_") or lowerRowId.startsWith("tmdb_") or lowerRowId.startsWith("plugindynamic:")
+end function
+
+' The saved rows were filtered when they were saved, and the blocked ratings may have changed since,
+' so they go through the same filter as fresh rows. A row left with nothing is dropped.
+function withoutBlockedCachedItems(records as object) as object
+    kept = []
+    for each record in records
+        if isOutsideTitlesRow(record.id)
+            record.items = parentalControls.WithoutUnratedOrBlockedItems(record.items)
+        else
+            record.items = parentalControls.WithoutBlockedItems(record.items)
+        end if
+        if record.items.count() > 0 then kept.push(record)
+    end for
+    return kept
+end function
+
+' With deferPosterLabels, a row only tags its nodes here, and Home asks for their labels afterwards
+function withLabels(nodes as dynamic) as dynamic
+    if m.deferLabels = true then return posterLabels.Tag(nodes)
+    return posterLabels.Attach(nodes)
+end function
+
+' Hands the row to Home, then keeps its items for the next launch when Home asked for that.
+' The items' json is read before the row leaves this thread.
+sub setRowContent(nodes as dynamic)
+    cacheRow = m.top.cacheRow
+    cacheable = false
+    if type(cacheRow) = "roAssociativeArray" then cacheable = homeCache.isText(cacheRow.dir) and type(nodes) = "roArray"
+
+    items = []
+    if cacheable
+        for each node in nodes
+            if type(node) = "roSGNode"
+                nodeJson = node.json
+                if type(nodeJson) = "roAssociativeArray" then items.push(nodeJson)
+            end if
+        end for
+    end if
+
+    itemsSig = ""
+    sameAsSaved = false
+    if cacheable and items.count() > 0
+        ' The row's place is part of the signature, so a row moved by a library reorder is saved again
+        itemsSig = homeCache.Signature(items) + "@" + toString(cacheRow.order)
+        sameAsSaved = homeCache.SavedSignature(cacheRow) = itemsSig
+        first = nodes[0]
+        if type(first) = "roSGNode" and first.hasField("cacheSig") then first.cacheSig = itemsSig
+    end if
+
+    m.top.content = nodes
+
+    ' The saved copy is already this row (and is written again once it ages out)
+    if cacheable and not sameAsSaved
+        homeCache.WriteRow(cacheRow, items, itemsSig)
+    end if
 end sub
 
 function decodeSeerrBase64(base64String as string) as string
@@ -3032,7 +3153,7 @@ function seerrCardNode(tmdbId as string, title as string, mediaType as string, p
     posterUrl = tmdbImageUrl(posterPath, "posterW342")
     backdropUrl = tmdbImageUrl(backdropPath, "backdropW1280")
 
-    tmp = createSGNode("HomeData")
+    tmp = newHomeCard()
     tmp.name = title
     tmp.type = (mediaType = "tv") ? "Series" : "Movie"
     if posterUrl <> "" then tmp.posterURL = posterUrl
@@ -3077,7 +3198,7 @@ function loadSeasonalRow() as object
     params = {}
     country = seasonalRow.CountryParam(get_user_setting(seasonalRow.COUNTRY_SETTING), m.global.device.countryCode)
     if country <> "" then params.country = country
-    if getBoolSetting(m.global.session.user.settings, seasonalRow.ALL_YEAR_SETTING, false) then params.allYear = "true"
+    if getBoolSetting(sessionNow().user.settings, seasonalRow.ALL_YEAR_SETTING, false) then params.allYear = "true"
 
     data = getJson(APIRequest("/Moonfin/Seasonal/Row", params))
     if not isValid(data) then return []
@@ -3250,9 +3371,9 @@ function loadPickedRow(picked as object) as object
     itemId = picked.itemId
     if not isValidAndNotEmpty(itemId) then return results
 
-    settings = m.global.session.user.settings
+    settings = sessionNow().user.settings
     params = {
-        UserId: m.global.session.user.id,
+        UserId: chainLookup(sessionNow(), "user.id"),
         Limit: 40,
         Fields: PICKED_ROW_FIELDS,
         EnableTotalRecordCount: false
@@ -3412,7 +3533,7 @@ end function
 ' A tile that opens a filtered browse rather than a title. The markers ride on the node so
 ' the home screen knows to push SeerrGenreBrowseScreen instead of a detail screen.
 function seerrBrowseTile(browseType as string, id as integer, name as string, mediaType as string, artUrl as string) as object
-    tile = createSGNode("HomeData")
+    tile = newHomeCard()
 
     ' The json goes on first. Setting it rebuilds the node from Jellyfin image tags, which
     ' would throw away artwork that came from TMDB.
@@ -3503,7 +3624,7 @@ function seerrShortcutRow() as object
         entry = shortcuts[i]
         still = i < art.count() ? art[i] : ""
 
-        tile = createSGNode("HomeData")
+        tile = newHomeCard()
         tile.json = {
             Id: `seerr-shortcut-${entry.key}`,
             name: entry.name,
@@ -3733,7 +3854,7 @@ function calendarNode(item as object, title as string, itemType as string, airs 
     runtime = item.LookupCI("runtime")
     if isValid(runtime) and runtime > 0 then payload.RunTimeTicks = runtime * 600000000&
 
-    node = createSGNode("HomeData")
+    node = newHomeCard()
 
     poster = arrArtwork(item, "poster")
     backdrop = arrArtwork(item, "fanart")

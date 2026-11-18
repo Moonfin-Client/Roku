@@ -2,6 +2,7 @@ import "pkg:/source/api/Image.bs"
 import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/homeCache.bs"
 import "pkg:/source/utils/homeCards.bs"
 import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/kidsMode.bs"
@@ -15,12 +16,29 @@ import "pkg:/source/utils/watchPartyModel.bs"
 
 const LOADING_WAIT_TIME = 2
 
+' A build whose rows never all answer still ends, so a refresh waiting behind it runs. A slow
+' server took 15 seconds for the last row in testing. The timeout only frees queued refreshes,
+' it doesn't stop rows from landing.
+const BUILD_TIMEOUT_SECONDS = 30
+
 ' Picked rows past the first eight sections wait until focus comes within two rows above them or
 ' five below, and then load three at a time
 const EAGER_SECTION_COUNT = 8
 const NEAR_ROWS_ABOVE = 2
 const NEAR_ROWS_BELOW = 5
 const LATE_ROW_LOADS = 3
+
+' The Recently Added rows a build counts for each server before that server's libraries are known.
+' The count is corrected to the real number once they are.
+const MULTI_SERVER_LATEST_ROWS = 5
+
+' Row tasks run at most this many at a time. Low-end Rokus have four cores, and each row task parses
+' its own answer, so more running at once would only slow each other down
+const ROW_POOL_SIZE = 4
+
+' Rows that land after the first of a build wait this long, then go in together, so the RowList
+' lays out once per batch rather than once per row while the viewer is pressing keys
+const ROW_FLUSH_SECONDS = 0.15
 
 ' A row's height beyond its cards. The title above them takes 56. Under them a row keeps room for three
 ' lines of caption and 16 clear of the next row's title, so no padding setting lets them touch. That's
@@ -56,6 +74,8 @@ function isFeaturedMediaEnabled() as boolean
 end function
 
 sub init()
+    ' The row list reads settings many times per build, and there is one of it, so it keeps a session copy (see sessionNow)
+    m.keepsSessionCopy = true
     m.scene = m.top.getScene()
 
     m.overhang = getActiveNav(m.scene)
@@ -68,7 +88,22 @@ sub init()
     ' Initialize libraryData to prevent access before loading
     m.libraryData = []
     m.filteredLatest = []
+    m.libraryRowOrder = {}
+    m.multiServerEstimates = {}
     m.emptySections = {}
+
+    ' Library sections wait for the library list. Until it lands, they are kept in librarySections.
+    m.librariesPending = false
+    m.librarySections = []
+
+    ' Rows that land after the first of a build are held here until the flush timer adds them
+    m.pendingRows = []
+    m.flushedThisBuild = false
+    m.flushScheduled = false
+    m.flushTimer = createObject("roSGNode", "Timer")
+    m.flushTimer.duration = ROW_FLUSH_SECONDS
+    m.flushTimer.repeat = false
+    m.flushTimer.observeField("fire", "flushPendingRows")
 
     m.loadingTimer = createObject("roSGNode", "Timer")
     m.loadingTimer.duration = LOADING_WAIT_TIME
@@ -90,6 +125,17 @@ sub init()
     m.lateRows = {}
     m.lateRowQueue = []
 
+    ' Row tasks start through a pool of ROW_POOL_SIZE. The rest wait in rowQueue, and Continue Watching
+    ' and Next Up jump to its front
+    m.rowQueue = []
+    m.pooledTasks = []
+    m.rowsInFlight = 0
+
+    ' The launch cache is read on a task of its own, so the libraries don't wait behind it
+    m.cacheReadTask = createObject("roSGNode", "LoadItemsTask")
+    m.cacheReadTask.itemsToLoad = "homeCacheRead"
+    m.cacheReadTask.observeField("cachedRecords", "onCachedRecords")
+
     m.LoadLibrariesTask = createObject("roSGNode", "LoadItemsTask")
 
     ' Initialize task storage - tasks will be created on-demand
@@ -97,18 +143,304 @@ sub init()
     m.multiServerTasks = {}
     m.pendingProbeCount = 0
     m.initialHomeRowsStarted = false
+
+    ' Only one build fills the rows at a time. A refresh asked for while one runs is queued, and
+    ' the strongest queued refresh runs when that build ends
+    m.buildInFlight = false
+    m.queuedBuild = ""
+    m.buildCount = 0
+    m.cacheScopeBuild = -1
+    m.cacheDir = ""
+    m.cacheKey = ""
+    m.buildTimeout = createObject("roSGNode", "Timer")
+    m.buildTimeout.duration = BUILD_TIMEOUT_SECONDS
+    m.buildTimeout.observeField("fire", "onBuildTimeout")
+
+    ' Poster labels for the cards of the rows that flush in together, asked for in one request. Cards
+    ' waiting on an id are kept in labelNodes until its answer lands.
+    m.labelNodes = {}
+    m.labelIdsWaiting = []
+    m.labelIdsAsked = []
+    m.labelsTask = createObject("roSGNode", "LoadItemsTask")
+    m.labelsTask.itemsToLoad = "posterLabels"
+    m.labelsTask.observeField("state", "onLabelsTaskState")
 end sub
 
+sub beginBuild()
+    dropEarlierRowWork()
+    m.libraryRowOrder = {}
+    m.multiServerEstimates = {}
+    m.buildInFlight = true
+    m.buildCount++
+    m.flushedThisBuild = false
+    m.buildTimeout.control = "stop"
+    m.buildTimeout.control = "start"
+end sub
+
+' dropEarlierRowWork: A new build replaces what earlier ones still had queued or running, such as rows left
+' over when a build timed out. Their queued tasks are dropped and late answers ignored, so a row the new
+' build doesn't have never comes back. A row it does have watches its task again, which then runs again.
+' The held back rows still loading lose their callbacks too, so their slots are freed here, and rows
+' waiting for the flush are dropped with the build they came from.
+sub dropEarlierRowWork()
+    m.lateRows = {}
+    m.lateRowQueue = []
+    m.pendingRows = []
+    m.flushTimer.control = "stop"
+    m.flushScheduled = false
+    for each task in m.rowQueue
+        dropRowCallbacks(task)
+    end for
+    m.rowQueue = []
+    kept = []
+    for each task in m.pooledTasks
+        if task.rowRunning
+            dropRowCallbacks(task)
+            kept.push(task)
+        end if
+    end for
+    m.pooledTasks = kept
+end sub
+
+' Row tasks answer on content, and multi-server ones on isComplete. A rerun an earlier build asked for
+' is dropped too, since it would watch that build's callback again when it starts.
+sub dropRowCallbacks(task as object)
+    task.unobserveField("content")
+    if task.hasField("isComplete") then task.unobserveField("isComplete")
+    if task.hasField("rowRerun") then task.rowRerun = false
+end sub
+
+' A library reload outranks a layout reload, which outranks a plain update
+function buildRank(kind as string) as integer
+    if kind = "libraries" then return 3
+    if kind = "reload" then return 2
+    if kind = "update" then return 1
+    return 0
+end function
+
+sub queueBuild(kind as string)
+    if buildRank(kind) > buildRank(m.queuedBuild) then m.queuedBuild = kind
+end sub
+
+' markPainted: Fires the AppLaunchComplete beacon once, when rows are on screen. Roku measures launch time with it.
+'
+sub markPainted()
+    if m.global.app_loaded then return
+    m.top.signalBeacon("AppLaunchComplete") ' Roku Performance monitoring
+    m.global.app_loaded = true
+end sub
+
+sub finishBuild(reason as string)
+    if not m.buildInFlight then return
+
+    m.buildInFlight = false
+    m.buildTimeout.control = "stop"
+
+    ' Fallback for a layout whose rows are all empty, so no flush ever paints one. Rows still waiting
+    ' for a flush are not on screen yet, so they leave the beacon to that flush.
+    if m.pendingRows.count() = 0 then markPainted()
+
+    ' A full build removes the painted rows it didn't replace, such as a library that was removed
+    if reason = "all rows"
+        removed = 0
+        for each row in m.top.content.getChildren(-1, 0)
+            if row.hasField("fromCache") and row.fromCache = true
+                if m.cacheDir <> "" then homeCache.Remove(m.cacheDir, row.id, row.title)
+                m.top.content.removeChild(row)
+                removed++
+            end if
+        end for
+        if removed > 0 then setRowItemSize()
+    end if
+
+    queued = m.queuedBuild
+    m.queuedBuild = ""
+    if queued = "libraries" then reloadLibraries()
+    if queued = "reload" then reloadHomeRows()
+    if queued = "update" then updateHomeRows()
+end sub
+
+sub onBuildTimeout()
+    finishBuild("timeout")
+end sub
+
+' refreshCacheScope: Sets where this build's rows are cached, and the layout and settings they were built
+' for. Multi-server rows mix servers, so they stay out of the cache while more than one server is signed in.
+sub refreshCacheScope()
+    ' Once per build: loadLibraries sets it before painting, then startHomeRowsLoading asks again
+    if m.cacheScopeBuild = m.buildCount then return
+    m.cacheScopeBuild = m.buildCount
+    m.cacheDir = ""
+    m.cacheKey = ""
+    ' The key names the layout, so it's read fresh in case the viewer has just changed it
+    m.cachedRowOrder = invalid
+    if isMultiServerEnabled() and getAllServerSessions().count() > 0 then return
+    ' A refresh during sign-out or a user switch has no user to cache for
+    userId = chainLookupReturn(m.global.session, "user.id", "")
+    if not isValidAndNotEmpty(userId) or not isString(userId) then return
+
+    m.cacheDir = homeCache.Dir(toString(get_url()), userId)
+    ' Folder names are shortened, so two accounts could share one. The key names the account in full,
+    ' so neither reads the other's rows.
+    ' The same expression addHomeSection reads, so the key matches the rows it builds
+    mergeContinueWatching = kidsMode.MergesContinueWatching(isStringEqual(get_user_setting("ui.home.mergeContinueWatchingNextUp"), "true"))
+    ' Row titles are translated, so the locale is part of the key
+    m.cacheKey = FormatJson([
+        homeCache.Owner(toString(get_url()), userId),
+        m.global.app.version,
+        localRowOrder(),
+        mergeContinueWatching,
+        get_user_setting_bool("ui.home.mergeRecentRowsByType", false),
+        get_user_setting_bool(recentRows.HIDE_WATCHED_SETTING, false),
+        kidsMode.Enabled(),
+        isModernHomeRows(),
+        isCarouselHomeRows(),
+        homeCards.CardSizeName(),
+        CreateObject("roDeviceInfo").GetCurrentLocale()
+    ])
+end sub
+
+' cacheRowFor: The cache record a single-server row's task saves its items under. Empty when this build isn't cached.
+'
+' @param {string} rowId - The row's setting key, as its update handler passes it to addOrUpdateHomeRow
+' @param {string} title - The row's title, as its update handler passes it to addOrUpdateHomeRow
+' @param {integer} order - The row's place among rows of the same key, so they come back in order
+' @return {object} the cache record, or {} when this build isn't cached
+function cacheRowFor(rowId as string, title as string, order = 0 as integer) as object
+    if m.cacheDir = "" then return {}
+    return { dir: m.cacheDir, key: m.cacheKey, id: rowId, title: title, order: order }
+end function
+
 sub loadLibraries()
+    if m.buildInFlight
+        queueBuild("libraries")
+        return
+    end if
+
+    beginBuild()
+    refreshCacheScope()
+    m.librariesPending = true
+    ' A launch, or a reload that emptied the rows, paints the rows saved last time while the libraries load
+    hasRows = false
+    for each row in m.top.content.getChildren(-1, 0)
+        if row.getChildCount() > 0 then hasRows = true
+    end for
+    ' The cache read starts first, so its rows are built while the libraries load
+    if m.cacheDir <> "" and not hasRows
+        m.cacheReadTask.cacheRead = { dir: m.cacheDir, key: m.cacheKey }
+        m.cacheReadTask.control = "RUN"
+    end if
     m.LoadLibrariesTask.observeField("content", "onLibrariesLoaded")
     m.LoadLibrariesTask.control = "RUN"
+
+    ' The rows that don't read the libraries start now, and the library rows follow when the list lands
+    startHomeRowsLoading()
 end sub
 
 ' The rows are emptied first, since the latest rows follow the library order and filling them
 ' in place would leave them where they were
 sub reloadLibraries()
+    if m.buildInFlight
+        queueBuild("libraries")
+        return
+    end if
+
     m.top.content = CreateObject("roSGNode", "ContentNode")
     loadLibraries()
+end sub
+
+' runRowTask: Starts a Home row's task through the pool, or queues it behind the tasks already running
+'
+' @param {object} task - The LoadItemsTask or MultiServerTask that fills a row
+' @param {string} field - The field the task answers on, content or isComplete
+' @param {string} handler - The callback for the answer, watched from the moment the run starts
+' @param {boolean} first - True for Continue Watching, Next Up and the merged row, which go to the front
+sub runRowTask(task as object, field as string, handler as string, first = false as boolean)
+    if not isValid(task) then return
+
+    ' A pooled row only tags its cards, and Home asks for their labels once per flush in queueLabels
+    if task.hasField("deferPosterLabels") then task.deferPosterLabels = true
+
+    ' Each task is watched once, since a second observeField would call the handler twice
+    if not task.hasField("rowPooled")
+        task.addFields({ rowPooled: true, rowRunning: false, rowRerun: false, rowField: "", rowHandler: "" })
+        task.observeField("state", "onRowTaskState")
+    end if
+    task.rowField = field
+    task.rowHandler = handler
+
+    ' The OS would drop a second RUN on a running task. Its answer may already be in, so it runs again
+    ' once it stops (onRowTaskState). The running answer is ignored, and the callback is watched again
+    ' when the new run starts. A task that has stopped still holds its slot until onRowTaskState
+    ' frees it, so starting it now would count it twice.
+    if task.state = "run" or task.rowRunning
+        task.unobserveField(field)
+        task.rowRerun = true
+        return
+    end if
+
+    for i = 0 to m.rowQueue.count() - 1
+        if m.rowQueue[i].isSameNode(task)
+            if first
+                m.rowQueue.delete(i)
+                m.rowQueue.unshift(task)
+            end if
+            return
+        end if
+    end for
+
+    if m.rowsInFlight < ROW_POOL_SIZE
+        startRowTask(task)
+    else
+        if first
+            m.rowQueue.unshift(task)
+        else
+            m.rowQueue.push(task)
+        end if
+    end if
+end sub
+
+' startRowTask: Sets a row task running
+'
+' @param {object} task - The row task to start
+sub startRowTask(task as object)
+    m.rowsInFlight++
+    task.rowRunning = true
+    task.rowRerun = false
+    m.pooledTasks.push(task)
+    ' Watched only here, so an answer from a run started for an earlier build never reaches it
+    task.unobserveField(task.rowField)
+    ' A rerun's earlier run may have left isComplete true, and the new run's true would then send no change
+    if task.rowField = "isComplete" then task.isComplete = false
+    task.observeField(task.rowField, task.rowHandler)
+    task.control = "RUN"
+end sub
+
+' onRowTaskState: Frees a pool slot when a row task stops, then starts the queued tasks that fit
+'
+' @param {dynamic} msg - The task's state change
+sub onRowTaskState(msg as object)
+    state = msg.getData()
+    if state <> "stop" and state <> "done" then return
+
+    task = msg.getRoSGNode()
+    ' A late stop from a run that has already started again
+    if task.state = "run" then return
+    ' A stop or done only frees a slot for a task this pool started and has not already counted, so an
+    ' OS that reports both states for one run cannot free two slots
+    if not task.rowRunning then return
+    task.rowRunning = false
+    if m.rowsInFlight > 0 then m.rowsInFlight = m.rowsInFlight - 1
+    if task.rowRerun
+        task.rowRerun = false
+        runRowTask(task, task.rowField, task.rowHandler)
+    end if
+
+    while m.rowsInFlight < ROW_POOL_SIZE and m.rowQueue.count() > 0
+        nextTask = m.rowQueue.shift()
+        ' A queued task that is already running is left to its own finish
+        if nextTask.state <> "run" then startRowTask(nextTask)
+    end while
 end sub
 
 ' getOrCreateTask: Lazily creates and returns a LoadItemsTask for the given type
@@ -235,9 +567,12 @@ end function
 
 
 sub startHomeRowsLoading()
+    refreshCacheScope()
     ' Read once per load, since every row that lands lays the list out again
     m.cardSizeName = homeCards.CardSizeName()
     m.modernRows = isModernHomeRows()
+    ' Row Padding can change between loads
+    m.top.itemSpacing = [0, homeRowsVerticalSpacing(m.modernRows)]
     m.carouselRows = isCarouselHomeRows()
     m.infoRoom = MODERN_INFO_ROOM
     if moonfinPlugin.IsRatingsEnabled("home") then m.infoRoom += MODERN_RATINGS_ROOM
@@ -263,6 +598,18 @@ sub holdBack(rowId as string)
     row.id = rowId
     row.title = title
 end sub
+
+' My Media keeps its place with a titled placeholder while the libraries load, so the row lands in place
+' Returns true when a placeholder was added
+function addLibraryPlaceholder() as boolean
+    title = tr("My Media")
+    if sectionExists(title, "smalllibrarytiles") or knownEmpty(title) then return false
+
+    row = m.top.content.CreateChild("HomeRow")
+    row.id = "smalllibrarytiles"
+    row.title = title
+    return true
+end function
 
 sub loadRowsNearFocus()
     if m.heldBackRows.count() = 0 then return
@@ -297,12 +644,12 @@ function getExpectedRowContribution(sectionName as string) as integer
         if isMultiServerEnabled()
             sessions = getAllServerSessions()
             if sessions.Count() > 0
-                ' Multi-server latest media builds 5 rows per server, while
+                ' Multi-server latest media builds a row per library on each server, while
                 ' recently released aggregates every server into a single row
                 if sectionName = "recentlyreleased"
                     return 1
                 end if
-                return sessions.Count() * 5
+                return sessions.Count() * MULTI_SERVER_LATEST_ROWS
             end if
         end if
 
@@ -321,8 +668,9 @@ function getExpectedRowContribution(sectionName as string) as integer
             if not (isValid(library.json) and library.json.IsGameLibrary = true) then m.filteredLatest.push(library)
         end for
 
-        ' When merging, libraries sharing a collection type collapse into a single row
-        mergeByType = get_user_setting_bool("ui.home.mergeRecentRowsByType", false)
+        ' When merging, libraries sharing a collection type collapse into a single row. Recently
+        ' Released keeps one row per library either way (createRecentlyReleasedRow).
+        mergeByType = (sectionName = "latestmedia") and get_user_setting_bool("ui.home.mergeRecentRowsByType", false)
         seenTypes = {}
         rowCount = 0
         for each latestLibrary in m.filteredLatest
@@ -381,12 +729,21 @@ function normalizeSectionId(id as dynamic) as string
 end function
 
 
+' needsLibraries: The sections that read the library list, so they wait for it while it loads
+'
+' @param {string} sectionName - Resolved section name
+' @return {boolean} true when the section needs m.libraryData
+function needsLibraries(sectionName as string) as boolean
+    return sectionName = "smalllibrarytiles" or sectionName = "latestmedia" or sectionName = "recentlyreleased"
+end function
+
 ' processUserSections: Loop through user's chosen home section settings and generate the content for each row
 '
 sub processUserSections()
     m.expectedRowCount = 0
     m.processedRowCount = 0
     m.mergedRowLoading = false
+    m.librarySections = []
 
     ' Migration: Remove featuredmedia from local settings if present (run once)
     for i = 0 to 7
@@ -402,13 +759,16 @@ sub processUserSections()
 
     m.heldBackRows = {}
     m.lateRowQueue = []
+    placeholderAdded = false
+    ' Library sections are counted once the libraries land, since their contribution reads them
     for i = 0 to homeSectionCount() - 1
         sectionName = getResolvedSectionName(i)
+        if m.librariesPending and needsLibraries(sectionName) then continue for
         if not holdsBack(i, sectionName) then m.expectedRowCount = m.expectedRowCount + getExpectedRowContribution(sectionName)
     end for
 
     ' Add home sections in order based on user settings
-    loadedSections = 0
+    m.loadedSectionCount = 0
     for i = 0 to homeSectionCount() - 1
         sectionName = getResolvedSectionName(i)
 
@@ -416,33 +776,41 @@ sub processUserSections()
         sectionLoaded = false
         if holdsBack(i, sectionName)
             holdBack(sectionName)
+        else if m.librariesPending and needsLibraries(sectionName)
+            m.librarySections.push(sectionName)
+            if sectionName = "smalllibrarytiles"
+                if addLibraryPlaceholder() then placeholderAdded = true
+            end if
         else if sectionName <> "none"
             sectionLoaded = addHomeSection(sectionName)
         end if
 
         ' Count how many sections with data are loaded
-        if sectionLoaded then loadedSections++
-
-        ' If 2 sections with data are loaded or we're at the end of the web client section data, consider the home view loaded
-        if not m.global.app_loaded
-            if loadedSections = 2 or i = 7
-                m.top.signalBeacon("AppLaunchComplete") ' Roku Performance monitoring
-                m.global.app_loaded = true
-            end if
-        end if
+        if sectionLoaded then m.loadedSectionCount++
     end for
 
-    if loadedSections = 0
+    ' Library sections that are still out will count toward the first load, so focus waits for them
+    if m.loadedSectionCount = 0 and m.librarySections.Count() = 0
         m.overhang.setfocus(true)
     end if
 
-    if m.heldBackRows.count() > 0
+    if m.heldBackRows.count() > 0 or placeholderAdded
         sortHomeRows()
         setRowItemSize()
     end if
 
     ' Start the timer for creating the content rows before we set the cursor size
     m.loadingTimer.control = "start"
+
+    ' A layout with no loadable sections has no row to answer, so the build is done here. Library
+    ' rows still out keep the build open until they land, and so do rows waiting to be added.
+    ' setRowItemSize finishes the build when it can lay the rows out, and a queued build may start
+    ' from there, so this only finishes one that is still this build
+    if m.expectedRowCount = m.processedRowCount and not m.librariesPending and m.pendingRows.count() = 0
+        build = m.buildCount
+        setRowItemSize()
+        if m.buildCount = build then finishBuild("all rows")
+    end if
 end sub
 
 ' onLibrariesLoaded: Handler when LoadLibrariesTask returns data
@@ -453,7 +821,114 @@ sub onLibrariesLoaded()
     m.LoadLibrariesTask.unobserveField("content")
     m.LoadLibrariesTask.content = []
 
-    startHomeRowsLoading()
+    m.librariesPending = false
+    waiting = m.librarySections
+    m.librarySections = []
+
+    ' Every contribution first, since the latest rows read m.filteredLatest that they fill
+    extraRows = 0
+    for each sectionName in waiting
+        extraRows += getExpectedRowContribution(sectionName)
+    end for
+    m.expectedRowCount = m.expectedRowCount + extraRows
+
+    for each sectionName in waiting
+        if addHomeSection(sectionName) then m.loadedSectionCount++
+    end for
+
+    if m.loadedSectionCount = 0 and isValid(m.overhang) then m.overhang.setfocus(true)
+
+    sortHomeRows()
+    setRowItemSize()
+end sub
+
+' onCachedRecords: Builds the rows saved at the last launch on the render thread, then paints them.
+' Reading a HomeData's json from a task would wait on the render thread for every item.
+sub onCachedRecords()
+    records = m.cacheReadTask.cachedRecords
+    if not isArrayValue(records) or records.count() = 0 then return
+    m.cacheReadTask.cachedRecords = []
+    ' Only a build removes the cached rows its fresh ones didn't replace, so a read that lands after
+    ' the build is dropped rather than left on screen
+    if not m.buildInFlight then return
+
+    imageContext = activeImageContext()
+    rows = []
+    for each record in records
+        ' A read started for an earlier build's layout lands in this one, so only rows saved for this
+        ' build's key are painted
+        if not isStringEqual(record.key, m.cacheKey) then continue for
+        row = CreateObject("roSGNode", "HomeRow")
+        row.id = record.id
+        row.title = record.title
+        ' Home can tell a cached row from a fresh one, so it can swap the fresh one in without a jump
+        row.fromCache = true
+        if isString(record.sig) then row.cacheSig = record.sig
+        for each item in record.items
+            child = CreateObject("roSGNode", "HomeData")
+            child.imageContext = imageContext
+            child.json = item
+            ' Home's own handlers set this only on Continue Watching and Continue Listening, so only those cards get it
+            if isStringEqual(record.id, "resume") or isStringEqual(record.id, "resumeaudio")
+                played = chainLookupReturn(item, "UserData.PlayedPercentage", invalid)
+                if isValid(played) then child.PlayedPercentage = played
+            end if
+            row.appendChild(child)
+        end for
+        rows.push(row)
+    end for
+
+    paintCachedRows(rows)
+end sub
+
+' paintCachedRows: Paints the rows saved at the last launch, so Home has content before the network answers.
+' A fresh row that already landed, or one waiting for the flush, wins over its saved copy.
+'
+' @param {object} rows - The HomeRow nodes built from the saved records
+sub paintCachedRows(rows as object)
+    painted = 0
+    ' Rows that share an id, such as the latest row of each library, all map to one section index. The
+    ' records come sorted by their saved order, so each goes after the one painted before it.
+    lastById = {}
+    for each row in rows
+        searchSectionTitle = LCase(row.title).Replace(" ", "")
+        index = getSectionIndex(row.title, row.id)
+        existing = invalid
+        if index < m.top.content.getChildCount() then existing = m.top.content.getChild(index)
+
+        pendingMatch = false
+        for each entry in m.pendingRows
+            if sectionMatches({ title: entry.sectionName, id: entry.key }, searchSectionTitle, row.id) then pendingMatch = true
+        end for
+
+        ' A row that already came back empty this build stays off, rather than showing its old copy
+        if pendingMatch or knownEmpty(row.title) or (isValid(existing) and existing.getChildCount() > 0)
+            continue for
+        end if
+
+        if isValid(existing)
+            m.top.content.replaceChild(row, index)
+        else
+            insertAt = getOriginalSectionIndex(row.id)
+            previous = lastById[row.id]
+            if isValid(previous)
+                children = m.top.content.getChildren(-1, 0)
+                for i = 0 to children.count() - 1
+                    if children[i].isSameNode(previous)
+                        insertAt = i + 1
+                        exit for
+                    end if
+                end for
+            end if
+            m.top.content.insertChild(row, insertAt)
+        end if
+        lastById[row.id] = row
+        painted++
+    end for
+
+    sortHomeRows()
+    setRowItemSize()
+    if painted > 0 then markPainted()
 end sub
 
 ' getOriginalSectionIndex: Gets the index of a section from user settings and adds count of currently known latest media sections
@@ -494,20 +969,170 @@ function getOriginalSectionIndex(sectionName as string) as integer
     return sectionIndex
 end function
 
-' addOrUpdateHomeRow: Sets the row ID, inserts or replaces it in the home view, and sorts the home rows
+' addOrUpdateHomeRow: Sets the row ID and queues the row for the home view. The first row of a build goes in
+' at once; rows that land after it are collected and added together by flushPendingRows.
 '
 ' @param {object} row - The HomeRow node we're adding or updating
 ' @param {string} sectionName - The localized title of the row
 ' @param {string} originalSectionKey - The setting key associated with the section
 sub addOrUpdateHomeRow(row as object, sectionName as string, originalSectionKey as string)
     row.id = originalSectionKey
-    if sectionExists(sectionName, originalSectionKey)
-        m.top.content.replaceChild(row, getSectionIndex(sectionName, originalSectionKey))
-    else
-        m.top.content.insertChild(row, getOriginalSectionIndex(originalSectionKey))
+
+    ' A newer row for the same slot replaces the older one still waiting
+    entry = { row: row, sectionName: sectionName, key: originalSectionKey }
+    searchSectionTitle = LCase(sectionName).Replace(" ", "")
+    replaced = false
+    for i = 0 to m.pendingRows.count() - 1
+        if sectionMatches({ title: m.pendingRows[i].sectionName, id: m.pendingRows[i].key }, searchSectionTitle, originalSectionKey)
+            m.pendingRows[i] = entry
+            replaced = true
+            exit for
+        end if
+    end for
+    if not replaced then m.pendingRows.push(entry)
+
+    if not m.flushedThisBuild
+        flushPendingRows()
+    else if not m.flushScheduled
+        m.flushScheduled = true
+        m.flushTimer.control = "start"
     end if
+end sub
+
+' flushPendingRows: Adds the waiting rows to the home view in one pass, then sorts and sizes the rows once
+'
+sub flushPendingRows()
+    m.flushTimer.control = "stop"
+    m.flushScheduled = false
+    if m.pendingRows.count() = 0 then return
+
+    flushedRows = []
+    for each entry in m.pendingRows
+        exists = sectionExists(entry.sectionName, entry.key)
+        if exists
+            index = getSectionIndex(entry.sectionName, entry.key)
+        else
+            index = getOriginalSectionIndex(entry.key)
+        end if
+
+        kept = false
+        if exists
+            existing = m.top.content.getChild(index)
+            kept = keepCachedCards(existing, entry.row)
+            if kept then entry.row = existing
+        end if
+        if kept
+        else if exists
+            m.top.content.replaceChild(entry.row, index)
+        else
+            m.top.content.insertChild(entry.row, index)
+        end if
+        flushedRows.push(entry.row)
+    end for
+    m.pendingRows = []
+
+    ' Set before the layout, since it can finish the build and start a queued one that resets these
+    m.flushedThisBuild = true
+
     sortHomeRows()
     setRowItemSize()
+
+    queueLabels(flushedRows)
+
+    painted = false
+    for each row in flushedRows
+        if row.getChildCount() > 0 then painted = true
+    end for
+    if painted then markPainted()
+end sub
+
+'' keepCachedCards: Keeps a row drawn from the launch cache when the fresh row matches it, so its cards
+' aren't drawn a second time. The fresh cards only add what the cache doesn't hold.
+'
+' @param {object} cached - The row on screen
+' @param {object} fresh - The row that just landed
+' @return {boolean} true when the cached row stays
+function keepCachedCards(cached as dynamic, fresh as object) as boolean
+    if not isValid(cached) or not cached.hasField("fromCache") or cached.fromCache <> true then return false
+    count = fresh.getChildCount()
+    if count = 0 or count <> cached.getChildCount() then return false
+    ' Compared with what was painted rather than the saved file, which a run that timed out may have
+    ' rewritten since
+    if cached.cacheSig = "" or fresh.getChild(0).cacheSig <> cached.cacheSig then return false
+
+    for i = 0 to count - 1
+        cachedCard = cached.getChild(i)
+        freshCard = fresh.getChild(i)
+        if cachedCard.labelId <> freshCard.labelId then cachedCard.labelId = freshCard.labelId
+        if cachedCard.PlayedPercentage <> freshCard.PlayedPercentage then cachedCard.PlayedPercentage = freshCard.PlayedPercentage
+    end for
+    cached.fromCache = false
+    return true
+end function
+
+' queueLabels: Collects the labelIds of the cards in the rows a flush added, and asks Home for their labels
+'
+' @param {object} rows - The rows the flush put in
+sub queueLabels(rows as object)
+    for each row in rows
+        ' A cached row is replaced by a fresh one soon, so its cards are not worth asking for
+        if row.hasField("fromCache") and row.fromCache = true then continue for
+        for each child in row.getChildren(-1, 0)
+            if not child.hasField("labelId") then continue for
+            id = child.labelId
+            if id = "" then continue for
+            if m.labelNodes.DoesExist(id)
+                ' Already asked for, or waiting for the next request. Its answer covers this card too
+                waiting = m.labelNodes[id]
+                waiting.push(child)
+            else
+                m.labelNodes[id] = [child]
+                m.labelIdsWaiting.push(id)
+            end if
+        end for
+    end for
+    startLabels()
+end sub
+
+' startLabels: Asks Home for the labels of the ids waiting, unless a request is still out. Its answer
+' starts the next one. A request is out until its answer clears labelIdsAsked, even once the task has
+' stopped, so a new one never replaces the ids still waiting for that answer.
+sub startLabels()
+    if m.labelIdsWaiting.count() = 0 or m.labelIdsAsked.count() > 0 then return
+
+    m.labelIdsAsked = m.labelIdsWaiting
+    m.labelIdsWaiting = []
+    m.labelsTask.itemIds = m.labelIdsAsked
+    m.labelsTask.control = "RUN"
+end sub
+
+' onLabelsTaskState: Puts the labels a request brought back on the cards waiting for them
+'
+' @param {dynamic} msg - The labels task's state change
+sub onLabelsTaskState(msg as object)
+    state = msg.getData()
+    if state <> "stop" and state <> "done" then return
+    ' A stop from an earlier request can arrive while a newer one runs. That one answers for itself.
+    if m.labelsTask.state = "run" or m.labelIdsAsked.count() = 0 then return
+
+    found = m.labelsTask.labels
+    applied = 0
+    for each id in m.labelIdsAsked
+        if not m.labelNodes.DoesExist(id) then continue for
+        waiting = m.labelNodes[id]
+        m.labelNodes.Delete(id)
+        if isValid(found)
+            if found.DoesExist(id)
+                for each node in waiting
+                    node.posterLabels = found[id]
+                    applied++
+                end for
+            end if
+        end if
+    end for
+    m.labelIdsAsked = []
+
+    startLabels()
 end sub
 
 ' sortHomeRows: Sorts all home rows based on their settings-configured order
@@ -522,10 +1147,15 @@ sub sortHomeRows()
     ' Resolve the section names and localized titles once so scoring stays cheap
     matchers = buildSectionMatchers()
 
-    ' Score every row once rather than recomputing during each comparison
+    ' Score every row once rather than recomputing during each comparison. Each library's row shares
+    ' its section's place, so the library order this build read breaks the tie. A cached row from
+    ' before the libraries came back keeps its saved place until then.
     indexes = []
     for each child in children
-        indexes.push(getOriginalSettingIndexForNode(child, matchers))
+        index = getOriginalSettingIndexForNode(child, matchers) * 1000
+        libraryOrder = m.libraryRowOrder[child.title]
+        if isValid(libraryOrder) then index += libraryOrder
+        indexes.push(index)
     end for
 
     ' Stable insertion sort based on settings index
@@ -652,7 +1282,15 @@ sub removeHomeSection(sectionTitleToRemove as string)
 
     sectionTitle = LCase(sectionTitleToRemove).Replace(" ", "")
     m.emptySections[sectionTitle] = true
-    if not sectionExists(sectionTitle) then return
+    ' A row that loaded and then came back empty in the same build is not added after all
+    for i = m.pendingRows.count() - 1 to 0 step -1
+        if LCase(m.pendingRows[i].sectionName).Replace(" ", "") = sectionTitle then m.pendingRows.delete(i)
+    end for
+    ' A row that was never on screen leaves the layout as it is, but may still be the build's last answer
+    if not sectionExists(sectionTitle)
+        finishIfAllRowsIn()
+        return
+    end if
 
     sectionIndexToRemove = getSectionIndex(sectionTitle)
 
@@ -693,11 +1331,16 @@ sub setRowItemSize()
     if anyVariable then m.variableWidthUsed = true
     if m.variableWidthUsed = true and FormatJson(variable) <> FormatJson(m.top.variableWidthItems) then m.top.variableWidthItems = variable
     fitRowCount()
+    finishIfAllRowsIn()
+end sub
 
-    ' If we have processed the expected number of content rows, stop the loading timer and run the complete function
-    if m.expectedRowCount = m.processedRowCount
+' If we have processed the expected number of content rows, stop the loading timer and run the complete function.
+' Library rows still out keep the build open until they land, and so do rows waiting to be added.
+sub finishIfAllRowsIn()
+    if m.expectedRowCount = m.processedRowCount and not m.librariesPending and m.pendingRows.count() = 0
         m.loadingTimer.control = "stop"
         loadingTimerComplete()
+        finishBuild("all rows")
     end if
 end sub
 
@@ -937,8 +1580,11 @@ end function
 '
 sub createLibraryRow()
     m.processedRowCount++
-    ' Ensure we have data
-    if not isValidAndNotEmpty(m.libraryData) then return
+    ' Ensure we have data. No libraries means no row, so the placeholder goes too.
+    if not isValidAndNotEmpty(m.libraryData)
+        removeHomeSection(tr("My Media"))
+        return
+    end if
 
     sectionName = tr("My Media")
 
@@ -992,7 +1638,8 @@ sub createLatestInRows()
             end if
         end for
 
-        for each colType in groupKeys
+        for i = 0 to groupKeys.count() - 1
+            colType = groupKeys[i]
             libsInGroup = groupedLibs[colType]
             libIds = []
             for each lib in libsInGroup
@@ -1028,8 +1675,9 @@ sub createLatestInRows()
                 loadLatest.metadata = metadata
                 m.latestRequests[sectionName] = { itemIds: libIds, itemId: firstLib.id, metadata: metadata }
 
-                loadLatest.observeField("content", "updateLatestItems")
-                loadLatest.control = TaskControl.RUN
+                m.libraryRowOrder[sectionName] = i
+                loadLatest.cacheRow = cacheRowFor("latestmedia", sectionName, i)
+                runRowTask(loadLatest, "content", "updateLatestItems")
             catch e
                 removeHomeSection(sectionName)
                 m.global.sceneManager.callFunc("standardDialog", `Error creating Recently Added rows`, { data: ["<p>" + `Error Message: ${e.message}` + "</p>"] })
@@ -1038,7 +1686,8 @@ sub createLatestInRows()
         return
     end if
 
-    for each lib in m.filteredLatest
+    for i = 0 to m.filteredLatest.count() - 1
+        lib = m.filteredLatest[i]
         if not isStringEqual(lib.collectionType, "boxsets") and not isStringEqual(lib.collectionType, "livetv") and not isStringEqual(lib.json.CollectionType, "Program")
             sectionName = `${tr("Recently Added in")} ${lib.name}`
 
@@ -1057,8 +1706,9 @@ sub createLatestInRows()
                 loadLatest.metadata = metadata
                 m.latestRequests[sectionName] = { itemIds: [], itemId: lib.id, metadata: metadata }
 
-                loadLatest.observeField("content", "updateLatestItems")
-                loadLatest.control = TaskControl.RUN
+                m.libraryRowOrder[sectionName] = i
+                loadLatest.cacheRow = cacheRowFor("latestmedia", sectionName, i)
+                runRowTask(loadLatest, "content", "updateLatestItems")
             catch e
                 removeHomeSection(sectionName)
                 m.global.sceneManager.callFunc("standardDialog", `Error creating Recently Added rows`, { data: ["<p>" + `Error Message: ${e.message}` + "</p>"] })
@@ -1071,7 +1721,8 @@ end sub
 '
 sub createRecentlyReleasedRow()
     ' create a Recently Added in row for each library
-    for each lib in m.filteredLatest
+    for i = 0 to m.filteredLatest.count() - 1
+        lib = m.filteredLatest[i]
         if not isStringEqual(lib.collectionType, "boxsets") and not isStringEqual(lib.collectionType, "livetv") and not isStringEqual(lib.json.CollectionType, "Program")
             sectionName = `${tr("Recently Released in")} ${lib.name}`
 
@@ -1089,8 +1740,9 @@ sub createRecentlyReleasedRow()
                 metadata.Append({ "contentType": lib.json.CollectionType })
                 loadLatest.metadata = metadata
 
-                loadLatest.observeField("content", "updateRecentlyReleasedItems")
-                loadLatest.control = TaskControl.RUN
+                m.libraryRowOrder[sectionName] = i
+                loadLatest.cacheRow = cacheRowFor("recentlyreleased", sectionName, i)
+                runRowTask(loadLatest, "content", "updateRecentlyReleasedItems")
             catch e
                 removeHomeSection(sectionName)
                 m.global.sceneManager.callFunc("standardDialog", `Error creating Recently Released rows`, { data: ["<p>" + `Error Message: ${e.message}` + "</p>"] })
@@ -1106,8 +1758,7 @@ sub createSinceYouWatchedRow(rowIndex as integer)
     task = createObject("roSGNode", "LoadItemsTask")
     task.itemsToLoad = "sinceYouWatched"
     task.metadata = { rowIndex: rowIndex }
-    task.observeField("content", "updateSinceYouWatchedItems")
-    task.control = TaskControl.RUN
+    runRowTask(task, "content", "updateSinceYouWatchedItems")
 end sub
 
 function homeRowIndexById(rowId as string) as integer
@@ -1121,6 +1772,12 @@ end function
 ' removeHomeRowById: A seed row is titled after whatever seeded it, so a rebuild onto a
 ' different seed has to find the old one by id or it would be left behind
 sub removeHomeRowById(rowId as string)
+    ' A row still waiting for the flush under this id would otherwise be added after the removal
+    for i = m.pendingRows.count() - 1 to 0 step -1
+        pending = m.pendingRows[i]
+        if isStringEqual(pending.key, rowId) or isStringEqual(pending.row.id, rowId) then m.pendingRows.delete(i)
+    end for
+
     if not isValid(m.top.content) then return
 
     for i = m.top.content.getChildCount() - 1 to 0 step -1
@@ -1180,8 +1837,7 @@ sub createRewatchRow()
     end if
 
     task = getOrCreateTask("rewatch")
-    task.observeField("content", "updateRewatchItems")
-    task.control = "RUN"
+    runRowTask(task, "content", "updateRewatchItems")
 end sub
 
 ' updateRewatchItems: Processes LoadItemsTask content for the Rewatch row
@@ -1283,8 +1939,7 @@ sub createLiveTVRow()
 
     ' Load the On Now Data (lazy task creation)
     task = getOrCreateTask("onNow")
-    task.observeField("content", "updateOnNowItems")
-    task.control = "RUN"
+    runRowTask(task, "content", "updateOnNowItems")
 end sub
 
 ' createContinueWatchingRow: Creates a row displaying items the user can continue watching
@@ -1304,8 +1959,8 @@ sub createContinueWatchingRow()
 
     ' Load the Continue Watching Data (lazy task creation)
     task = getOrCreateTask("continue")
-    task.observeField("content", "updateContinueWatchingItems")
-    task.control = "RUN"
+    task.cacheRow = cacheRowFor("resume", sectionName)
+    runRowTask(task, "content", "updateContinueWatchingItems", true)
 end sub
 
 ' createMultiServerContinueWatchingRow: Creates a row with continue watching from all servers
@@ -1314,8 +1969,8 @@ sub createMultiServerContinueWatchingRow()
     sessions = getAllServerSessions()
     if sessions.count() = 0
         task = getOrCreateTask("continue")
-        task.observeField("content", "updateContinueWatchingItems")
-        task.control = "RUN"
+        task.cacheRow = cacheRowFor("resume", tr("Continue Watching"))
+        runRowTask(task, "content", "updateContinueWatchingItems", true)
         return
     end if
 
@@ -1342,8 +1997,7 @@ sub createMultiServerContinueWatchingRow()
         EnableImageTypes: "Primary,Backdrop,Thumb",
         ImageTypeLimit: "1"
     }
-    task.observeField("isComplete", "onMultiServerContinueWatchingComplete")
-    task.control = "RUN"
+    runRowTask(task, "isComplete", "onMultiServerContinueWatchingComplete", true)
 end sub
 
 ' onMultiServerContinueWatchingComplete: Handler for multi-server continue watching results
@@ -1400,7 +2054,11 @@ end function
 ' Both sections feed the merged row, so whichever comes first loads it. It reloads on every pass,
 ' or a refresh would keep showing the old row.
 sub loadMergedContinueWatchingRow()
-    if m.mergedRowLoading = true then return
+    if m.mergedRowLoading = true
+        ' The second section shares the merged row, so it has nothing of its own to wait for
+        m.processedRowCount++
+        return
+    end if
     m.mergedRowLoading = true
     createMergedContinueWatchingRow()
 end sub
@@ -1419,8 +2077,8 @@ sub createMergedContinueWatchingRow()
 
     ' Load the Merged Continue Watching Data (lazy task creation)
     task = getOrCreateTask("mergedContinueWatching")
-    task.observeField("content", "updateMergedContinueWatchingItems")
-    task.control = "RUN"
+    task.cacheRow = cacheRowFor("resume", sectionName)
+    runRowTask(task, "content", "updateMergedContinueWatchingItems", true)
 end sub
 
 ' createContinueListeningRow: Creates a row displaying items the user can continue listening
@@ -1435,8 +2093,8 @@ sub createContinueListeningRow()
 
     ' Load the Continue Listening Data (lazy task creation)
     task = getOrCreateTask("continueListening")
-    task.observeField("content", "updateContinueListeningItems")
-    task.control = "RUN"
+    task.cacheRow = cacheRowFor("resumeaudio", sectionName)
+    runRowTask(task, "content", "updateContinueListeningItems")
 end sub
 
 ' createNextUpRow: Creates a row displaying next episodes up to watch
@@ -1455,8 +2113,8 @@ sub createNextUpRow()
     end if
 
     task = getOrCreateTask("nextUp")
-    task.observeField("content", "updateNextUpItems")
-    task.control = "RUN"
+    task.cacheRow = cacheRowFor("nextup", sectionName)
+    runRowTask(task, "content", "updateNextUpItems", true)
 end sub
 
 ' createMultiServerNextUpRow: Creates a row with next up episodes from all servers
@@ -1465,8 +2123,8 @@ sub createMultiServerNextUpRow()
     sessions = getAllServerSessions()
     if sessions.count() = 0
         task = getOrCreateTask("nextUp")
-        task.observeField("content", "updateNextUpItems")
-        task.control = "RUN"
+        task.cacheRow = cacheRowFor("nextup", tr("Next Up"))
+        runRowTask(task, "content", "updateNextUpItems", true)
         return
     end if
 
@@ -1493,8 +2151,7 @@ sub createMultiServerNextUpRow()
         EnableTotalRecordCount: "false",
         EnableImageTypes: "Primary,Backdrop,Thumb"
     }
-    task.observeField("isComplete", "onMultiServerNextUpComplete")
-    task.control = "RUN"
+    runRowTask(task, "isComplete", "onMultiServerNextUpComplete", true)
 end sub
 
 ' onMultiServerNextUpComplete: Handler for multi-server next up results
@@ -1573,9 +2230,19 @@ sub createMultiServerLatestRows(sessions as object)
         })
 
         task.observeField("isComplete", "onMultiServerLibrariesLoaded")
+        m.multiServerEstimates[userSession.serverId] = true
         task.control = "RUN"
     end for
 
+end sub
+
+' Swaps the server's estimate for the rows it really started, once per build, since a late answer
+' from an earlier build can land in this one
+sub settleMultiServerEstimate(serverId as string, started as integer)
+    if not m.multiServerEstimates.DoesExist(serverId) then return
+    m.multiServerEstimates.Delete(serverId)
+    m.expectedRowCount += started - MULTI_SERVER_LATEST_ROWS
+    finishIfAllRowsIn()
 end sub
 
 ' onMultiServerLibrariesLoaded: Handler for library list loaded from a server
@@ -1597,6 +2264,7 @@ sub onMultiServerLibrariesLoaded(msg as object)
     results = node.results
 
     if not isValidAndNotEmpty(results)
+        settleMultiServerEstimate(userSession.serverId, 0)
         return
     end if
 
@@ -1608,6 +2276,7 @@ sub onMultiServerLibrariesLoaded(msg as object)
 
 
     ' Create a row for each library
+    started = 0
     for each item in results
         collectionType = ""
         if isValid(item.CollectionType) then collectionType = LCase(item.CollectionType)
@@ -1663,10 +2332,11 @@ sub onMultiServerLibrariesLoaded(msg as object)
             }
         })
 
-        task.observeField("isComplete", "onMultiServerLatestPerLibraryComplete")
-        task.control = "RUN"
+        runRowTask(task, "isComplete", "onMultiServerLatestPerLibraryComplete")
+        started++
     end for
 
+    settleMultiServerEstimate(userSession.serverId, started)
 end sub
 
 ' onMultiServerLatestPerLibraryComplete: Handler for per-library per-server latest items
@@ -1753,8 +2423,7 @@ sub createMultiServerRecentlyReleasedRow(sessions as object)
     }
     if get_user_setting_bool(recentRows.HIDE_WATCHED_SETTING, false) then params.Filters = "IsUnplayed"
     task.params = params
-    task.observeField("isComplete", "onMultiServerRecentlyReleasedComplete")
-    task.control = "RUN"
+    runRowTask(task, "isComplete", "onMultiServerRecentlyReleasedComplete")
 end sub
 
 ' onMultiServerRecentlyReleasedComplete: Handler for multi-server recently released results
@@ -1829,8 +2498,7 @@ sub createMultiServerFavoritesRow(sessions as object)
         EnableImageTypes: "Primary,Backdrop,Thumb",
         ImageTypeLimit: "1"
     }
-    task.observeField("isComplete", "onMultiServerFavoritesComplete")
-    task.control = "RUN"
+    runRowTask(task, "isComplete", "onMultiServerFavoritesComplete")
 end sub
 
 ' onMultiServerFavoritesComplete: Handler for multi-server favorites results
@@ -1892,8 +2560,8 @@ sub createMyListRow()
 
     ' Load the My List Data (lazy task creation)
     task = getOrCreateTask("mylist")
-    task.observeField("content", "updateMyListItems")
-    task.control = "RUN"
+    task.cacheRow = cacheRowFor("mylist", sectionName)
+    runRowTask(task, "content", "updateMyListItems")
 end sub
 
 ' createFavoritesRow: Creates a row displaying items from the user's favorites list
@@ -1908,21 +2576,33 @@ sub createFavoritesRow()
 
     ' Load the Favorites Data (lazy task creation)
     task = getOrCreateTask("favorites")
-    task.observeField("content", "updateFavoritesItems")
-    task.control = "RUN"
+    task.cacheRow = cacheRowFor("favorites", sectionName)
+    runRowTask(task, "content", "updateFavoritesItems")
 end sub
 
 ' updateHomeRows: Update function exposed to outside components
 '
 sub updateHomeRows()
+    if m.buildInFlight
+        queueBuild("update")
+        return
+    end if
+
+    beginBuild()
     startHomeRowsLoading()
 end sub
 
 ' A layout change takes rows away as well as adding them, so the list is emptied before it is
 ' filled again rather than merged with whatever the last one left standing
 sub reloadHomeRows()
+    if m.buildInFlight
+        queueBuild("reload")
+        return
+    end if
+
     m.top.content = CreateObject("roSGNode", "ContentNode")
-    updateHomeRows()
+    beginBuild()
+    startHomeRowsLoading()
 end sub
 
 ' updateFavoritesItems: Processes LoadFavoritesTask content. Removes, Creates, or Updates favorites row as needed
@@ -2035,10 +2715,6 @@ end sub
 sub updateNextUpItems()
     m.processedRowCount++
     itemData = getTaskContentAndCleanup("nextUp")
-    ' Stop the task for Next Up
-    if m.contentTasks.doesExist("nextUp")
-        m.contentTasks["nextUp"].control = "STOP"
-    end if
 
     sectionName = tr("Next Up")
 
@@ -2252,6 +2928,8 @@ sub itemSelected()
     ' Force field change notification even for same item by clearing first
     m.top.selectedItem = invalid
     m.top.selectedItem = item
+    ' The card's labels can land later, and a node left in the field would open it again
+    m.top.selectedItem = invalid
 end sub
 
 ' Continue Watching and Next Up cards play when picked, if the viewer set them to
@@ -2595,6 +3273,13 @@ sub removeRetitledHomeRow(rowId as string, title as string)
     if not isValid(m.top.content) then return
 
     keepTitle = LCase(title).Replace(" ", "")
+
+    ' Same rule as the content check below: a waiting row under this id with another title goes
+    for i = m.pendingRows.count() - 1 to 0 step -1
+        pending = m.pendingRows[i]
+        if isStringEqual(pending.key, rowId) and LCase(pending.sectionName).Replace(" ", "") <> keepTitle then m.pendingRows.delete(i)
+    end for
+
     removed = false
     children = m.top.content.getChildren(-1, 0)
     for i = children.count() - 1 to 0 step -1
@@ -2634,13 +3319,13 @@ function createCustomDynamicRow(row as object) as boolean
         task.additionalData = additionalDataVal
     end if
 
-    task.observeField("content", "updateCustomDynamicRowItems")
-    task.control = "RUN"
+    runRowTask(task, "content", "updateCustomDynamicRowItems")
     return true
 end function
 
 sub updateCustomDynamicRowItems(event as object)
     task = event.getRoSGNode()
+    build = m.buildCount
     rowId = task.itemsToLoad
     itemData = getTaskContentAndCleanup(rowId)
 
@@ -2665,17 +3350,24 @@ sub updateCustomDynamicRowItems(event as object)
     else
         mappedName = customDynamicRowTitle(rowId)
     end if
+    ' Taking a retitled row out can finish the build and start a queued one, which loads this row itself
+    if m.buildCount <> build then return
     sectionName = isValidAndNotEmpty(mappedName) ? mappedName : rowId
 
     ' Found by its key, since a picked row can carry the same title as another one
     if not isValidAndNotEmpty(itemData)
+        ' An empty row may be the last one the build was waiting on
         if rowId = "mdblist_watching_now"
             startWatchingNowRefreshTimer()
             ' As in Core, a refresh that fails or comes back empty leaves the cards already up
-            if homeRowIndexById(rowId) >= 0 then return
+            if homeRowIndexById(rowId) >= 0
+                finishIfAllRowsIn()
+                return
+            end if
         end if
         m.emptySections[LCase(sectionName).Replace(" ", "")] = true
         removeHomeRowById(rowId)
+        finishIfAllRowsIn()
         return
     end if
 
@@ -2823,8 +3515,7 @@ end function
 
 sub createInternalRow(taskKey as string)
     task = getOrCreateTask(taskKey)
-    task.observeField("content", "updateInternalRowItems")
-    task.control = "RUN"
+    runRowTask(task, "content", "updateInternalRowItems")
 end sub
 
 sub updateInternalRowItems(event as object)
@@ -2896,6 +3587,8 @@ sub showWatchParties(rooms as object)
     row.id = "watch_parties"
     if isValid(m.cardSizeName) then layOutRow(row, m.modernRows, m.cardSizeName)
     addOrUpdateHomeRow(row, row.title, "watch_parties")
+    ' keepRowFocus and showWatchPartiesFromStart read the row's index, so it goes in now
+    flushPendingRows()
     if not hadRow then keepRowFocus(1)
 
     ids = []

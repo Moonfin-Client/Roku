@@ -12,15 +12,18 @@ import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/homeCards.bs"
-import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/mediaBadges.bs"
+import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/multiserver.bs"
 import "pkg:/source/utils/musicLibraryStyle.bs"
 import "pkg:/source/utils/ratingsRow.bs"
-import "pkg:/source/utils/themeApply.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
+import "pkg:/source/utils/themeApply.bs"
+import "pkg:/source/utils/userViews.bs"
 
 sub init()
+    ' Home reads settings many times per build, and there is one of it, so it keeps a session copy (see sessionNow)
+    m.keepsSessionCopy = true
     observeUserData()
     ' Check if this is truly the first run (ever, not just this session)
     ' Use registry to persist this across app restarts
@@ -105,6 +108,9 @@ sub init()
     m.backdropCrossfading = false
     m.backdropTargetOpacity = 1.0
     m.backdropPlacement = "fullScreen"
+    m.makdKenBurns = m.top.findNode("makdKenBurns")
+    m.backdrop.scaleRotateCenter = [960, 540]
+    m.backdropPrev.scaleRotateCenter = [960, 540]
 
     ' Observe when focused item changes
     m.homeRows.observeField("rowItemFocused", "onItemFocusChanged")
@@ -159,6 +165,8 @@ end sub
 ' The libraries themselves changed, like their order, so the nav and the rows read them again
 ' rather than waiting for the next launch
 sub onLibrariesChanged()
+    ' Drop the shared 60 s libraries memo, or the nav and rows would read the old order
+    userViews.Forget()
     if isValid(m.activeNav) then m.activeNav.callFunc("loadLibraries")
     m.homeRows.callFunc("reloadLibraries")
 end sub
@@ -627,25 +635,30 @@ sub onBackdropLoadStatusChange()
                 m.backdropPrevFadeOut.control = "start"
             end if
             m.backdropCrossfading = false
+            if makdZooms() then m.makdKenBurns.control = "start"
         end if
     end if
 end sub
 
-sub refresh()
+' The cursor color and the modern focus card, which the launch push needs without a row rebuild
+sub applyRowChrome()
     m.homeRows.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.WHITE)
     layOutModernFocusCard()
+end sub
+
+sub refresh()
+    applyRowChrome()
     m.homeRows.callFunc("updateHomeRows")
 end sub
 
 ' For a change that decides which rows exist at all, rather than what is in them
 sub reload()
-    m.homeRows.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.WHITE)
+    applyRowChrome()
     ' Row Type only changes at the next launch, so the info area switch is applied to the rows Home has
     if not m.modernHomeRows and m.homeRowInfoOverlay <> get_user_setting_bool("ui.home.rowInfoOverlay", true)
         m.homeRowInfoOverlay = not m.homeRowInfoOverlay
         if isValid(m.mediaBar) and not m.mediaBar.visible then applyMediaBarLayout(false)
     end if
-    layOutModernFocusCard()
     m.homeRows.callFunc("reloadHomeRows")
 end sub
 
@@ -694,6 +707,11 @@ const PILL_PADDING = 10
 const OVERVIEW_TOP = 212
 const OVERVIEW_TOP_NO_RATINGS = 160
 const OVERVIEW_LINE_HEIGHT = 36
+
+' MakD zooms its backdrop slowly through each slide, as makd's own bar does
+function makdZooms() as boolean
+    return isValid(m.mediaBar) and m.mediaBar.visible and (m.global.session.user.settings["ui.home.mediaBarMode"] ?? "moonfin") = "makd"
+end function
 
 ' Whichever of the rows and the bar takes focus is where Back returns to, so a pick
 ' from the bar comes back to the bar. The spinner that takes focus on the way out
@@ -809,6 +827,12 @@ sub applyMediaBarLayout(mediaBarVisible as boolean)
         if isValid(m.backdrop) then m.backdrop.opacity = 0.3
         m.backdropTargetOpacity = 0.3
     end if
+
+    if not makdZooms()
+        m.makdKenBurns.control = "stop"
+        m.backdrop.scale = [1.0, 1.0]
+        m.backdropPrev.scale = [1.0, 1.0]
+    end if
 end sub
 
 ' The rows can show the backdrop in the top right corner, faded out toward the left and the bottom
@@ -827,21 +851,21 @@ sub placeBackdrop(placement as string)
         size = [BACKDROP_CORNER_WIDTH, BACKDROP_CORNER_HEIGHT]
         offset = [1920 - BACKDROP_CORNER_WIDTH, 0]
         m.backdropMask.maskUri = "pkg:/images/backdropCornerMask.png"
-        m.backdropMask.maskSize = size
-        m.backdropMask.maskOffset = offset
+        m.backdropMask.size = size
+        m.backdropMask.offset = offset
         fit = "scaleToZoom"
     else if placement = "top"
         size = [1920, 1080]
         offset = [0, 0]
         m.backdropMask.maskUri = "pkg:/images/backdropTopMask.webp"
-        m.backdropMask.maskSize = size
-        m.backdropMask.maskOffset = offset
+        m.backdropMask.size = size
+        m.backdropMask.offset = offset
         fit = "scaleToFill"
     else
         size = [1920, 1080]
         offset = [0, 0]
         m.backdropMask.maskUri = ""
-        m.backdropMask.maskSize = [0, 0]
+        m.backdropMask.size = [0, 0]
         fit = "scaleToFill"
     end if
     for each poster in [m.backdrop, m.backdropPrev]
@@ -988,8 +1012,12 @@ sub OnScreenShown(_isReturning = false as boolean)
 
         if needsRowReload
             reload()
-        else if not _isReturning or needsPlaybackRefresh
+        else if needsPlaybackRefresh
             refresh()
+        else if not _isReturning
+            ' The screen is pushed right after loadLibraries started the row build,
+            ' so building the rows again here would do the work twice.
+            applyRowChrome()
         end if
 
         if needsPlaybackRefresh
@@ -1211,7 +1239,11 @@ sub startBackdropCrossfade(uri as string, matchBlur = false as boolean)
         m.backdropPrev.loadHeight = m.backdrop.loadHeight
         m.backdropPrev.uri = m.backdrop.uri
         m.backdropPrev.opacity = m.backdropTargetOpacity
+        ' The outgoing art keeps the zoom it reached while it fades
+        m.backdropPrev.scale = m.backdrop.scale
     end if
+    m.makdKenBurns.control = "stop"
+    m.backdrop.scale = [1.0, 1.0]
 
     loadWidth = 0
     if matchBlur then loadWidth = blurMatchingLoadWidth(uri)

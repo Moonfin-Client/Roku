@@ -4613,5 +4613,13 @@
         <source>SyncPlay Group</source>
         <translation>SyncPlay 播放组</translation>
     </message>
+    <message>
+        <source>Show Description on Pause</source>
+        <translation>暂停时显示简介</translation>
+    </message>
+    <message>
+        <source>Dim video and show overview text while paused</source>
+        <translation>暂停时调暗视频并显示简介文本</translation>
+    </message>
 </context>
 </TS>

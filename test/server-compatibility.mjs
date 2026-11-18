@@ -6,6 +6,7 @@ const readFile = async (...args) => {
 };
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { Writable } from 'node:stream';
 import bsc from 'brighterscript';
 import brs from 'brs';
@@ -48,11 +49,28 @@ brs.types.RoRegex.prototype.getMethod = function (name) {
     });
 };
 
+// brs has no UpTime; the device returns seconds since the app started.
+const { Environment } = createRequire(import.meta.url)('brs/lib/interpreter/Environment.js');
+const startedAt = performance.now();
+const upTime = new brs.types.Callable('UpTime', {
+    signature: {
+        args: [new brs.types.StdlibArgument('dummy', brs.types.ValueKind.Int32)],
+        returns: brs.types.ValueKind.Float,
+    },
+    impl: () => new brs.types.Float((performance.now() - startedAt) / 1000),
+});
+const originalDefine = Environment.prototype.define;
+Environment.prototype.define = function (scope, name, value) {
+    originalDefine.call(this, scope, name, value);
+    if (name === '_brs_') originalDefine.call(this, scope, 'UpTime', upTime);
+};
+
 // Execute production functions after BrighterScript transpilation. Only the
 // device registry and authentication context are replaced with deterministic fixtures.
 const selections = {
     'source/utils/serverCompatibility.bs': null,
     'source/utils/accentFolding.bs': null,
+    'source/utils/startupPrefetch.bs': null,
     'source/utils/libraryFilters.bs': null,
     'source/utils/itemMenu.bs': null,
     'source/utils/logRedaction.bs': null,
@@ -105,6 +123,7 @@ const selections = {
     'source/utils/moonbaseInstall.bs': null,
     'source/utils/watchPartyModel.bs': null,
     'source/utils/recentRows.bs': null,
+    'source/utils/homeCache.bs': null,
     'components/settings/SettingsLivePreview.bs': ['headerLayout', 'navbarButtons', 'inLibraryOrder', 'optionRange', 'optionsFit', 'playerMoment', 'drawsHomeRows', 'sampleReleaseShows', 'seerrStyleOf', 'homeBlur', 'followerTarget'],
     'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt', 'subtitleBottom', 'seekBarY', 'timeRowShows', 'promptAt', 'segmentSpan', 'scrubPauses'],
     'components/calendar/calendarHost.bs': ['calendarUsePrefs'],
@@ -133,8 +152,8 @@ const selections = {
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
     'source/utils/config.bs': ['current_user_id', 'get_user_setting', 'settingOr', 'getSavedUsers', 'savedUserFirst'],
-    'source/utils/misc.bs': ['normalizeDetailScreenStyleToken', 'isLocalhost', 'isSupportedMediaServer', 'isSiloSystemInfo', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'isSeerrFilterRow', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'collectionGroups', 'collectionLabel', 'nearsCollectionEnd', 'collectionPeople', 'shuffleArray'],
-    'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
+    'source/utils/misc.bs': ['normalizeDetailScreenStyleToken', 'sessionNow', 'storeSession', 'serverIdentityNow', 'reusableOnTask', 'onTaskThread', 'startupPrefetchAnswer', 'isLocalhost', 'isSupportedMediaServer', 'isSiloSystemInfo', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'isSeerrFilterRow', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'collectionGroups', 'collectionLabel', 'nearsCollectionEnd', 'collectionPeople', 'shuffleArray'],
+    'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras', 'isSeerrCastMember'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream', 'audioQualityLabel'],
     'components/video/VideoPlayerView.bs': ['startEmbyPreview', 'nextTranscodeStep', 'retryAction', 'streamSummary', 'liveFallbackMethod', 'liveReResolveRequest', 'liveReconnectingLabel', 'rokuAudioTrack'],
@@ -226,8 +245,11 @@ for (const name of ['Context', 'WordSet', 'ItemIdOf', 'Shown', 'Entry', 'SizeFac
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/poster-labels.bs', 'utf8');
+source += '\n' + await readFile('test/home-cache.bs', 'utf8');
 source += '\n' + await readFile('test/transcode-audio.bs', 'utf8');
 source += '\n' + await readFile('test/person-role.bs', 'utf8');
+source += '\n' + await readFile('test/seerr-person.bs', 'utf8');
+assert.match(await readFile('source/utils/seerrDetailItem.bs', 'utf8'), /function Person\([^]*?_seerrPerson: true/, 'A Seerr title\'s cast is marked as it\'s read');
 source += '\n' + await readFile('test/episode-cast.bs', 'utf8');
 // The rest of the Plex playback rules reach for the server
 const plexPlaybackFile = await readFile('source/api/plex/PlexPlayback.bs', 'utf8');
@@ -728,6 +750,29 @@ for (const image of maskImages) {
 }
 process.stdout.write(`PASS: mask image formats (${maskImages.size} checks)\n`);
 
+// A MaskGroup's size is in screen pixels, which a 720p Roku doesn't scale with the layout, so every
+// mask is a ScreenMask, sized in layout pixels. One left without a size draws its bitmap unscaled.
+let screenMaskChecks = 0;
+for await (const file of glob('{components,source}/**/*.{bs,xml}')) {
+    if (/components\/ScreenMask\.(bs|xml)$/.test(file)) continue;
+    const code = await readFile(file, 'utf8');
+    assert.doesNotMatch(code, /<MaskGroup\b|"MaskGroup"/, `${file} uses ScreenMask rather than MaskGroup`);
+    assert.doesNotMatch(code, /mask(Size|Offset)/, `${file} sets a ScreenMask's size and offset rather than maskSize and maskOffset`);
+    if (!file.endsWith('.xml')) continue;
+    for (const [tag] of code.matchAll(/<ScreenMask\b[^>]*>/g)) {
+        screenMaskChecks++;
+        if (/\bsize=/.test(tag)) continue;
+        const id = tag.match(/\bid="([^"]+)"/)?.[1];
+        assert.ok(id, `${file}: a ScreenMask with no size has an id, so its code can size it`);
+        const script = await readFile(file.replace(/\.xml$/, '.bs'), 'utf8');
+        const lookup = `m.top.findNode("${id}")`;
+        const names = [lookup, ...[...script.matchAll(/([\w.]+) = m\.top\.findNode\("([^"]+)"\)/g)].filter((match) => match[2] === id).map((match) => match[1])];
+        assert.ok(names.some((name) => script.includes(`${name}.size =`)), `${file}: ${id} is given a size`);
+    }
+}
+assert.ok(screenMaskChecks > 30, 'The ScreenMask scan found the masks');
+process.stdout.write(`PASS: masks sized for the screen (${screenMaskChecks} checks)\n`);
+
 // Every details style fills its pickers before a reload returns early, so the lists are there on a
 // first visit, and each style takes in a subtitle downloaded from it.
 const detailStyles = ['ItemDetails', 'ModernItemDetails', 'MinimalistItemDetails', 'NouveauItemDetails', 'SpotlightItemDetails'];
@@ -804,11 +849,12 @@ const previewTable = settingsScreen.match(/function previewSceneTable\(\)[^]*?en
 const subtitleLooks = [...(await readFile('settings/settings.json', 'utf8')).matchAll(/"settingName": "(playback\.subs\.(?:custom|style\.\w+))"/g)].map(match => match[1]);
 assert.ok(subtitleLooks.length >= 22, 'The subtitle style settings are found');
 for (const key of subtitleLooks) assert.ok(previewTable.includes(`"${key}": "player"`), `${key} shows on the Player preview`);
-// The skip button and the end of episode settings show on the Player preview, which pins its prompts
-// where the player does
-for (const key of ['playback.mediasegments.intro', 'playback.mediasegments.outro', 'playback.mediasegments.countdown', 'playback.nextupbehavior', 'playback.nextuptimeout', 'playback.showNextAirDate', 'playback.replaceskipoutrowithnextup', 'playback.trickplay.pauseWhileScrubbing']) {
+// The skip button, the end of episode settings and the paused description show on the Player
+// preview, which pins its prompts where the player does
+for (const key of ['playback.mediasegments.intro', 'playback.mediasegments.outro', 'playback.mediasegments.countdown', 'playback.nextupbehavior', 'playback.nextuptimeout', 'playback.showNextAirDate', 'playback.replaceskipoutrowithnextup', 'playback.trickplay.pauseWhileScrubbing', 'playback.showDescriptionOnPause']) {
     assert.ok(previewTable.includes(`"${key}": "player"`), `${key} shows on the Player preview`);
 }
+assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /\{ pluginKey: "showDescriptionOnPause", rokuKey: "playback\.showDescriptionOnPause", type: "bool" \}/, 'Show Description on Pause syncs with the server profile');
 const playerPreviewSource = await readFile('components/settings/SettingsPlayerPreview.bs', 'utf8');
 for (const name of ['OVERLAY_EDGE', 'OVERLAY_BOTTOM', 'SKIP_PROMPT_TOP']) {
     assert.equal(playerPreviewSource.match(new RegExp(`^const ${name} = (\\d+)`, 'm'))[1], playerView.match(new RegExp(`^const ${name} = (\\d+)`, 'm'))[1], `The preview's ${name} is the player's`);
@@ -935,7 +981,10 @@ assert.match(settingsSyncSource.match(/function HomeSectionsPayload\([^]*?end fu
 assert.match(settingsSyncSource, /\{ pluginKey: "mdblistApiKey", rokuKey: "plugin\.mdblist\.apiKey", type: "direct", skipRegistry: true, receiveOnly: true \}/, 'The MDBList key is only read');
 assert.match(await readFile('components/settings/settings.bs', 'utf8'), /profile\.Append\(settingsSync\.LegacyRowSwitches\(\)\)/, 'The old row switches follow the layout for older app versions');
 const loadItemsSource = await readFile('components/home/LoadItemsTask.bs', 'utf8');
-assert.match(loadItemsSource, /startsWith\("plugindynamic:"\)\s+m\.top\.content = posterLabels\.Attach\(parentalControls\.WithoutUnratedOrBlockedItems\(/, 'Chart rows drop unrated titles once a rating is blocked');
+assert.match(loadItemsSource, /if isOutsideTitlesRow\(itemsToLoad\)\s+m\.top\.content = withLabels\(parentalControls\.WithoutUnratedOrBlockedItems\(/, 'Chart rows drop unrated titles once a rating is blocked');
+assert.match(loadItemsSource.match(/function isOutsideTitlesRow\([^]*?end function/)[0], /startsWith\("plugindynamic:"\)/, 'Rows the plugin proxies count as chart rows');
+assert.match(loadItemsSource, /records = withoutBlockedCachedItems\(homeCache\.ReadRows\(/, 'Saved rows go through the parental filter before Home shows them');
+assert.match(loadItemsSource.match(/function withoutBlockedCachedItems\([^]*?end function/)[0], /isOutsideTitlesRow\(record\.id\)\s+record\.items = parentalControls\.WithoutUnratedOrBlockedItems\([^]*?WithoutBlockedItems\(record\.items\)/, 'Saved chart rows get the strict filter and the rest the usual one');
 assert.match(loadItemsSource, /startsWith\("seerr_"\)\s+m\.top\.content = parentalControls\.WithoutBlockedItems\(/, 'Seerr rows keep the usual filter');
 assert.match(loadItemsSource.match(/function loadSeasonalRow\([^]*?end function/)[0], /WithoutBlockedItems\(owned\)[^]*?WithoutUnratedOrBlockedItems\(suggestions\)/, 'Owned titles keep the usual filter and suggestions the strict one');
 assert.match(loadItemsSource.match(/function loadSeasonalRow\([^]*?end function/)[0], /seasonalRow\.ALL_YEAR_SETTING, false\) then params\.allYear = "true"/, 'Show All Year asks the plugin for a row outside the holiday dates');
@@ -979,7 +1028,7 @@ assert.match(loadItemsSource.match(/function customRowCard\([^]*?end function/)[
 const watchingNowRows = await readFile('components/home/HomeRows.bs', 'utf8');
 assert.match(watchingNowRows.match(/sub onWatchingNowRefreshFired\([^]*?end sub/)[0], /kidsMode\.Enabled\(\) or /, 'Kids Mode stops the watching now refresh');
 assert.match(watchingNowRows.match(/sub onWatchingNowRefreshFired\([^]*?end sub/)[0], /activeScene\.isSubType\("VideoPlayerView"\) then return/, 'The watching now refresh waits out the video player, as in Core');
-assert.match(watchingNowRows.match(/sub updateCustomDynamicRowItems\([^]*?end sub/)[0], /if homeRowIndexById\(rowId\) >= 0 then return/, 'A failed or empty refresh keeps the watching now cards up, as in Core');
+assert.match(watchingNowRows.match(/sub updateCustomDynamicRowItems\([^]*?end sub/)[0], /if homeRowIndexById\(rowId\) >= 0\s+finishIfAllRowsIn\(\)\s+return/, 'A failed or empty refresh keeps the watching now cards up, as in Core');
 assert.match(loadItemsSource.match(/function loadWatchingNowRow\([^]*?end function/)[0], /customRowCard\(item, \{\}\)/, 'Watching now cards are outside titles, as in Core');
 assert.match(await readFile('components/home/Home.xml', 'utf8'), /rowTitleComponentName="HomeRowTitle"/, 'Home rows draw their titles with the row title component');
 assert.match(await readFile('source/utils/misc.bs', 'utf8'), /if isSeerrFilterRow\(rowId\) or inArray\(\["mdblist_watching_now", "watch_parties", "studios", "audio", "resumeaudio"\], rowId\) then return false/, 'Watching now keeps its wide cards in modern rows, as do Watch Parties, Seerr\'s browse rows, Studios and audio rows');
@@ -1020,8 +1069,9 @@ assert.match(reloadSettings.match(/sub dismissPanel\([^]*?end sub/)[0], /if m\.h
 assert.match(await readFile('source/Main.bs', 'utf8'), /homeNeedsReload: false,/, 'The pending Home reload starts off');
 const homeShown = (await readFile('components/home/Home.bs', 'utf8')).match(/sub OnScreenShown\([^]*?^end sub/m)[0];
 assert.match(homeShown, /needsRowReload = chainLookupReturn\(m\.global, "homeNeedsReload", false\)\s+if needsRowReload then m\.global\.homeNeedsReload = false\s+if not m\.isFirstRun/, 'Home clears the pending reload when it shows, first run included');
-assert.match(homeShown, /if needsRowReload[^]*?reload\(\)\s+else if not _isReturning or needsPlaybackRefresh\s+refresh\(\)/, 'Home builds its rows from scratch for the pending reload instead of refreshing them');
-process.stdout.write(`PASS: Home reload settings wiring (${homeRowSettingNames.length + reloadList.length + 10} checks)\n`);
+assert.match(homeShown, /if needsRowReload[^]*?reload\(\)\s+else if needsPlaybackRefresh[^]*?refresh\(\)/, 'Home builds its rows from scratch for the pending reload instead of refreshing them');
+assert.match(homeShown, /else if not _isReturning[^]*?applyRowChrome\(\)\s+end if/, 'The launch push leaves the rows to the build loadLibraries started, so they are built once');
+process.stdout.write(`PASS: Home reload settings wiring (${homeRowSettingNames.length + reloadList.length + 11} checks)\n`);
 
 // A picked collection row asks for its members alone, follows a stored Playlist Order and opens
 // a series into its episodes in order when asked
@@ -1263,7 +1313,9 @@ assert.match(syncFunction('GetMappings'), /\{ pluginKey: "keyboardStyle", rokuKe
 const keyboardStyle = findSetting(settingsTree, 'ui.keyboard.style');
 assert.equal(keyboardStyle.default, 'docked', 'Docked is the keyboard default');
 const keyboardSource = await readFile('components/keyboards/TVKeyboard.bs', 'utf8');
-assert.match(keyboardSource, /settingOr\(KB_STYLE_SETTING, "docked"\)/, 'The keyboard falls back to the default the setting shows');
+assert.match(keyboardSource, /settingOr\(tvKeyboard\.STYLE_SETTING, "docked"\)/, 'Signed in, the keyboard falls back to the default the setting shows');
+assert.match(keyboardSource, /get_setting\(tvKeyboard\.DEVICE_STYLE_SETTING, "docked"\)/, 'Signed out, the keyboard reads the device style with the same default');
+assert.match(keyboardSource, /isValidAndNotEmpty\(m\.global\.session\.user\.authToken\)/, 'The keyboard waits for a token, since sign in sets the account id before the password');
 assert.match(keyboardSource, /if entry = "IME"\s+openStylePicker\(\)/, 'The keyboard key opens the style picker');
 assert.match(keyboardSource, /if m\.pickingStyle\s+pickStyle\(value\)/, 'Picking a style saves it and switches the keyboard');
 assert.deepEqual(keyboardStyle.options.map(option => option.id), ['native', 'classic', 'glass', 'docked'], 'The keyboard styles keep the values the profile stores');
@@ -1343,7 +1395,7 @@ assert.match(await readFile('components/home/Home.xml', 'utf8'), /<ModernFocusCa
 // Settings are stored flat, so a dotted path that splits the key never finds Prefer Thumbnails
 const homeRowsSource = await readFile('components/home/HomeRows.bs', 'utf8');
 assert.doesNotMatch(miscSource, /"user\.settings\.ui\.home\.preferThumbnails"/, 'Prefer Thumbnails is read by its flat key');
-assert.match(miscSource, /chainLookupReturn\(m\.global\.session, "user\.settings\.`ui\.home\.preferThumbnails`", false\)/, 'Prefer Thumbnails has one reader');
+assert.match(miscSource, /chainLookupReturn\(sessionNow\(\), "user\.settings\.`ui\.home\.preferThumbnails`", false\)/, 'Prefer Thumbnails has one reader');
 // Every row's cards take Core's sizes and the art for the row's image type in one place
 assert.doesNotMatch(homeRowsSource, /usePoster = not prefersThumbnails\(\)|imageWidth = row\.imageWidth/, 'No row picks its own card size or art');
 assert.match(homeRowsSource.match(/sub layOutRow\([^]*?end sub/)[0], /imageType = homeCards\.RowImageType\(rowId, musicRow\)/, 'A Classic row takes its image type');
@@ -1561,6 +1613,17 @@ assert.match(homeRowsWiring, /m\.emptySections\[sectionTitle\] = true/, 'A secti
 assert.equal((homeRowsWiring.match(/if not sectionExists\(sectionName\) and not knownEmpty\(sectionName\)/g) || []).length, 12, 'Every placeholder skips a section known to be empty');
 assert.match(homeRowsWiring, /const EAGER_SECTION_COUNT = 8\s+const NEAR_ROWS_ABOVE = 2\s+const NEAR_ROWS_BELOW = 5\s+const LATE_ROW_LOADS = 3/, 'Picked rows past the first eight wait for focus to come near');
 assert.match(homeRowsWiring, /if holdsBack\(i, sectionName\)\s+holdBack\(sectionName\)/, 'Held back rows only get a placeholder');
+assert.match(homeRowsWiring, /if task\.state = "run" or task\.rowRunning\s+task\.unobserveField\(field\)\s+task\.rowRerun = true/, 'A row task that stopped but still holds its slot runs again once it frees it, so it is never counted twice');
+assert.match(homeRowsWiring, /sub startLabels\(\)\s+if m\.labelIdsWaiting\.count\(\) = 0 or m\.labelIdsAsked\.count\(\) > 0 then return/, 'A label request waits for the last answer, so the ids still out are never dropped');
+assert.match(homeRowsWiring, /index = getOriginalSettingIndexForNode\(child, matchers\) \* 1000\s+libraryOrder = m\.libraryRowOrder\[child\.title\]/, "Each library's row sorts by the library order the build read, not where its saved copy was painted");
+assert.equal((homeRowsWiring.match(/m\.libraryRowOrder\[sectionName\] = i/g) || []).length, 3, 'Every Recently Added and Recently Released row records its library order');
+assert.match(homeRowsWiring, /if cached\.cacheSig = "" or fresh\.getChild\(0\)\.cacheSig <> cached\.cacheSig then return false/, 'Cached cards are kept only when the fresh items are the ones they were painted from');
+assert.match(homeRowsWiring, /row\.fromCache = true\s+if isString\(record\.sig\) then row\.cacheSig = record\.sig/, 'A cached row carries the signature of the items it was painted from');
+assert.match(homeRowsWiring, /m\.expectedRowCount \+= started - MULTI_SERVER_LATEST_ROWS/, "A server's Recently Added estimate is corrected to the rows it really started, so the build doesn't wait for rows that never come");
+assert.doesNotMatch(homeRowsWiring, /contentTasks\["nextUp"\]\.control = "STOP"/, 'Next Up ends on its own, so its cache write is never cut off');
+assert.match(await readFile('source/api/silo/SiloSession.bs', 'utf8'), /reg\.Flush\(\)\s+' [^\n]*\s+silo\.ForgetMemos\(\)\s+end sub/, 'A sign-out clears the memo after the login is gone');
+assert.match(await readFile('source/utils/startupPrefetch.bs', 'utf8'), /startupPrefetch\.SendSilo\(m\)\s+m\.inflight\.Delete\(url\)/, 'A taken Silo prefetch holds its place until its answer is in');
+assert.match(await readFile('components/home/LoadItemsTask.bs', 'utf8'), /itemsSig = homeCache\.Signature\(items\) \+ "@" \+ toString\(cacheRow\.order\)/, 'A saved row moved by a library reorder is saved again');
 const syncWiring = await readFile('source/utils/settingsSync.bs', 'utf8');
 for (const key of ['imdb', 'tmdb', 'seerr']) {
     assert.match(syncWiring, new RegExp(`\\{ pluginKey: "${key}RowsSortBy", rokuKey: "${key}\\.rowsSortBy", type: "direct" \\}`), `The ${key} sort syncs`);
@@ -1607,6 +1670,19 @@ assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(
 assert.match(await readFile('source/utils/SeerrUtils.bs', 'utf8'), /if style = "stage" then return "StageItemDetails"/, 'A title only in Seerr opens in Stage too');
 assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "premiere"\)[^]*?minimalistRules\.Draws\(itemType\) then return "PremiereItemDetails"\s+return "ModernItemDetails"/, 'Premiere draws the video and collection pages and hands the rest to Modern');
 assert.match(await readFile('source/utils/SeerrUtils.bs', 'utf8'), /if style = "premiere" then return "PremiereItemDetails"/, 'A title only in Seerr opens in Premiere too');
+for (const file of ['NouveauItemDetails', 'StageItemDetails', 'PremiereItemDetails']) {
+  const rebuild = (await readFile(`components/details/${file}.bs`, 'utf8')).match(/sub rebuildSections\(\)[^]*?\nend sub/)[0];
+  assert.match(rebuild, /releaseRails\(\)/, `${file} keeps its rails for addRail to reuse when it rebuilds`);
+  assert.doesNotMatch(rebuild, /m\.sectionsGroup\.removeChildrenIndex/, `${file} doesn't throw its rails away when it rebuilds`);
+  assert.match(rebuild, /dropUnusedRails\(\)/, `${file} lets go of the rails it didn't use again`);
+}
+const addRail = (await readFile('components/details/NouveauItemDetails.bs', 'utf8')).match(/sub addRail\([^]*?\nend sub/)[0];
+assert.match(addRail, /m\.railPool\.DoesExist\(signature\)[^]*?callFunc\("clearFocus"\)/, 'A reused rail comes over with no card lit');
+assert.match(addRail, /callFunc\("clearFocus"\)\s+node\.callFunc\("resetPlacement"\)/, 'A reused rail goes back to where it opened, not where it was last scrolled');
+const nouveauRail = await readFile('components/details/nouveau/NouveauRail.bs', 'utf8');
+assert.match(nouveauRail, /sub resetPlacement\(\)\s+m\.track\.translation = \[0, 0\]\s+if m\.startIndex > 0 then placeStart\(m\.startIndex\)/, 'Resetting a rail puts its track back at its start card');
+assert.match(addRail, /if signature <> "" then signature = kind \+ railLook\(\) \+ signature/, 'A spec that cannot be written out is never matched to another rail, and a rail drawn under other theme or Seerr badge settings is built again');
+assert.match(await readFile('components/details/StageItemDetails.bs', 'utf8'), /cards\.push\(\{ title: item\.title, sdPosterUrl: item\.sdPosterUrl/, "Stage's Seerr cards carry the title's values, not its node, so a rebuild can reuse their rail");
 assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "frost"\)[^]*?minimalistRules\.Draws\(itemType\) then return "FrostItemDetails"\s+return "ModernItemDetails"/, 'Frost draws the video and collection pages and hands the rest to Modern');
 assert.match(await readFile('source/utils/SeerrUtils.bs', 'utf8'), /if style = "frost" then return "FrostItemDetails"/, 'A title only in Seerr opens in Frost too');
 assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "quickLook"\)[^]*?minimalistRules\.Draws\(itemType\) and not \(isValid\(top\) and top\.isSubtype\("QuickLookItemDetails"\)\) then return "QuickLookItemDetails"\s+return "ModernItemDetails"/, 'Quick Look draws Stage\'s pages in its drawer, and what the drawer opens and every other page is Modern');

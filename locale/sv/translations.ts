@@ -2510,5 +2510,265 @@
         <source>SyncPlay Group</source>
         <translation>SyncPlay Grupp</translation>
     </message>
+    <message>
+        <source>File Details</source>
+        <translation>Filinformation</translation>
+    </message>
+    <message>
+        <source>Minimalist</source>
+        <translation>Minimalistisk</translation>
+    </message>
+    <message>
+        <source>More Actions</source>
+        <translation>Fler åtgärder</translation>
+    </message>
+    <message>
+        <source>Recap</source>
+        <translation>Sammanfattning</translation>
+    </message>
+    <message>
+        <source>Filler</source>
+        <translation>Fyllmedel</translation>
+    </message>
+    <message>
+        <source>Manga Canon</source>
+        <translation>Manga Canon</translation>
+    </message>
+    <message>
+        <source>Anime Canon</source>
+        <translation>Anime Canon</translation>
+    </message>
+    <message>
+        <source>Subbed</source>
+        <translation>Undertextad</translation>
+    </message>
+    <message>
+        <source>Dubbed</source>
+        <translation>Dubbad</translation>
+    </message>
+    <message>
+        <source>Subbed/Dubbed</source>
+        <translation>Undertextad/dubbad</translation>
+    </message>
+    <message>
+        <source>Sub</source>
+        <translation>Sub</translation>
+    </message>
+    <message>
+        <source>Dub</source>
+        <translation>Dub</translation>
+    </message>
+    <message>
+        <source>Sub/Dub</source>
+        <translation>Sub/Dub</translation>
+    </message>
+    <message>
+        <source>Spotlight</source>
+        <translation>Spotlight</translation>
+    </message>
+    <message>
+        <source>Stage</source>
+        <translation>Stage</translation>
+    </message>
+    <message>
+        <source>Additional Parts</source>
+        <translation>Tilläggsdelar</translation>
+    </message>
+    <message>
+        <source>Quick Look</source>
+        <translation>Översikt</translation>
+    </message>
+    <message>
+        <source>Frost</source>
+        <translation>Frost</translation>
+    </message>
+    <message>
+        <source>Open full page</source>
+        <translation>Öppna helsida</translation>
+    </message>
+    <message>
+        <source>Back to close</source>
+        <translation>Tillbaka till stängning</translation>
+    </message>
+    <message>
+        <source>Docked</source>
+        <translation>I docka</translation>
+    </message>
+    <message>
+        <source>Playlist Order</source>
+        <translation>Spellistans ordning</translation>
+    </message>
+    <message>
+        <source>Filmography</source>
+        <translation>Filmografi</translation>
+    </message>
+    <message>
+        <source>Vertical</source>
+        <translation>Vertikal</translation>
+    </message>
+    <message>
+        <source>Horizontal</source>
+        <translation>Horisontellt</translation>
+    </message>
+    <message>
+        <source>Chapters and Extras</source>
+        <translation>Kapitel och extramaterial</translation>
+    </message>
+    <message>
+        <source>Cast, Crew, and Studios</source>
+        <translation>Skådespelare, filmteam och produktionsbolag</translation>
+    </message>
+    <message>
+        <source>Movies &amp; Shows</source>
+        <translation>Filmer och serier</translation>
+    </message>
+    <message>
+        <source>Recommendations (Seerr)</source>
+        <translation>Rekommendationer (Seerr)</translation>
+    </message>
+    <message>
+        <source>Similar (Seerr)</source>
+        <translation>Liknande (Seerr)</translation>
+    </message>
+    <message>
+        <source>More Episodes</source>
+        <translation>Fler avsnitt</translation>
+    </message>
+    <message>
+        <source>Or scan this with a phone that&apos;s signed in to your server</source>
+        <translation>Eller skanna den här koden med en telefon som är inloggad på din server</translation>
+    </message>
+    <message>
+        <source>Signed in on this device</source>
+        <translation>Inloggad på den här enheten</translation>
+    </message>
+    <message>
+        <source>Password required</source>
+        <translation>Lösenord krävs</translation>
+    </message>
+    <message>
+        <source>PIN required</source>
+        <translation>PIN-kod krävs</translation>
+    </message>
+    <message>
+        <source>Downloading subtitle…</source>
+        <translation>Hämtar undertexter…</translation>
+    </message>
+    <message>
+        <source>AI Translated</source>
+        <translation>Översatt med AI</translation>
+    </message>
+    <message>
+        <source>Machine Translated</source>
+        <translation>Maskinöversatt</translation>
+    </message>
+    <message>
+        <source>Fetching subtitles</source>
+        <translation>Hämta undertexter</translation>
+    </message>
+    <message>
+        <source>How a movie or show looks when you open it.</source>
+        <translation>Hur en film eller serie ser ut när man öppnar den.</translation>
+    </message>
+    <message>
+        <source>This account can&apos;t sign in right now. It may be outside its allowed hours, locked or disabled. Try again later or ask an administrator.</source>
+        <translation>Det går inte att logga in med det här kontot just nu. Det kan bero på att det är utanför de tillåtna tiderna, att kontot är spärrat eller inaktiverat. Försök igen senare eller kontakta en administratör.</translation>
+    </message>
+    <message>
+        <source>Keyboard Style</source>
+        <translation>Tangentbordsstil</translation>
+    </message>
+    <message>
+        <source>Native uses your TV&apos;s own keyboard. Classic is the original Moonfin keyboard. Glass is a frosted panel with larger keys. Docked fills the bottom of the screen and shows what you type above the keys.</source>
+        <translation>I läget ”Native” används TV:ns eget tangentbord. ”Classic” är det ursprungliga Moonfin-tangentbordet. ”Glass” är en frostat panel med större tangenter. I läget ”Docked” fyller tangentbordet hela skärmens nedre del och visar vad du skriver ovanför tangenterna.</translation>
+    </message>
+    <message>
+        <source>Native</source>
+        <translation>Native</translation>
+    </message>
+    <message>
+        <source>space</source>
+        <translation>mellanslag</translation>
+    </message>
+    <message>
+        <source>close</source>
+        <translation>stäng</translation>
+    </message>
+    <message>
+        <source>Time&apos;s up</source>
+        <translation>Tiden är ute</translation>
+    </message>
+    <message>
+        <source>This account isn&apos;t available right now.</source>
+        <translation>Det här kontot är inte tillgängligt just nu.</translation>
+    </message>
+    <message>
+        <source>Scroll Direction</source>
+        <translation>Rullningsriktning</translation>
+    </message>
+    <message>
+        <source>Shuffle All</source>
+        <translation>Blanda alla</translation>
+    </message>
+    <message>
+        <source>Go to plex.tv/link on any device and enter this code</source>
+        <translation>Gå till plex.tv/link på valfri enhet och ange den här koden</translation>
+    </message>
+    <message>
+        <source>No Plex servers found on this account</source>
+        <translation>Inga Plex-servrar hittades för detta konto</translation>
+    </message>
+    <message>
+        <source>Signing in...</source>
+        <translation>Loggar in...</translation>
+    </message>
+    <message>
+        <source>Sign in with a password</source>
+        <translation>Logga in med lösenord</translation>
+    </message>
+    <message>
+        <source>Sign in with Plex</source>
+        <translation>Logga in med Plex</translation>
+    </message>
+    <message>
+        <source>Verification code</source>
+        <translation>Bekräftelsekod</translation>
+    </message>
+    <message>
+        <source>Waiting for you to approve the code...</source>
+        <translation>Väntar på att du ska godkänna koden...</translation>
+    </message>
+    <message>
+        <source>Grandparents</source>
+        <translation>Far- och morföräldrar</translation>
+    </message>
+    <message>
+        <source>Episode Director</source>
+        <translation>Avsnittsregissör</translation>
+    </message>
+    <message>
+        <source>Episode Writer</source>
+        <translation>Manusförfattare för avsnittet</translation>
+    </message>
+    <message>
+        <source>Guest Star</source>
+        <translation>Gästskådespelare</translation>
+    </message>
+    <message>
+        <source>Queued</source>
+        <translation>Queued</translation>
+    </message>
+    <message>
+        <source>Server Recommends</source>
+        <translation>Serverens rekommendationer</translation>
+    </message>
+    <message>
+        <source>Show Description on Pause</source>
+        <translation>Visa beskrivning på paus</translation>
+    </message>
+    <message>
+        <source>Dim video and show overview text while paused</source>
+        <translation>Dimma videon och visa översiktstext medan den är pausad</translation>
+    </message>
 </context>
 </TS>
