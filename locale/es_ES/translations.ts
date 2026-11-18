@@ -5150,7 +5150,7 @@
     </message>
     <message>
         <source>Overview</source>
-        <translation>Sinopsis</translation>
+        <translation>General</translation>
     </message>
     <message>
         <source>Music</source>
@@ -5887,6 +5887,74 @@
     <message>
         <source>Server Recommends</source>
         <translation>Server Recommends</translation>
+    </message>
+    <message>
+        <source>Navigation Bar</source>
+        <translation>Barra de Navegacion</translation>
+    </message>
+    <message>
+        <source>Show the Live TV button in the navigation bar when the server has a Live TV library</source>
+        <translation>Muestra el botón de TV en Directo en la barra de navegación cuando el servidor tiene una biblioteca de TV en directo</translation>
+    </message>
+    <message>
+        <source>Show each library as its own button in the navigation bar instead of in the Libraries menu</source>
+        <translation>Mostrar cada biblioteca como un botón independiente en la barra de navegación en lugar de en el menú Bibliotecas</translation>
+    </message>
+    <message>
+        <source>The same address you&apos;d open in a browser, including the port.</source>
+        <translation>La misma dirección que abrirías en un navegador, incluyendo el puerto.</translation>
+    </message>
+    <message>
+        <source>Server found</source>
+        <translation>Servidor encontrado</translation>
+    </message>
+    <message>
+        <source>Use a different address</source>
+        <translation>Usar una dirección diferente</translation>
+    </message>
+    <message>
+        <source>Step {0} of {1}</source>
+        <translation>Paso {0} de {1}</translation>
+    </message>
+    <message>
+        <source>Skip setup</source>
+        <translation>Omitir la configuración</translation>
+    </message>
+    <message>
+        <source>How should your rows look?</source>
+        <translation>¿Cómo deberían verse tus filas?</translation>
+    </message>
+    <message>
+        <source>You&apos;re set. Here&apos;s what else is in here.</source>
+        <translation>Ya está todo listo. Esto es lo que hay dentro.</translation>
+    </message>
+    <message>
+        <source>Seerr requests</source>
+        <translation>Solicitar a Seerr</translation>
+    </message>
+    <message>
+        <source>Show the Seerr request button on missing movies and seasons</source>
+        <translation>Mostrar el botón de solicitud de Seerr en las películas y temporadas faltantes</translation>
+    </message>
+    <message>
+        <source>Custom themes</source>
+        <translation>Temas personalizados</translation>
+    </message>
+    <message>
+        <source>Not shown in the preview</source>
+        <translation>No se muestra en la vista previa</translation>
+    </message>
+    <message>
+        <source>Live preview</source>
+        <translation>Vista previa en directo</translation>
+    </message>
+    <message>
+        <source>Show chat over the video</source>
+        <translation>Mostrar el chat sobre el vídeo</translation>
+    </message>
+    <message>
+        <source>A separate style used while HDR is playing</source>
+        <translation>Un estilo diferente que se usa mientras se reproduce HDR</translation>
     </message>
 </context>
 </TS>
