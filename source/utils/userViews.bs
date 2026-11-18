@@ -1,0 +1,106 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/sdk.bs"
+import "pkg:/source/utils/misc.bs"
+
+' The user's libraries (/UserViews), fetched once and shared by the nav, the Home rows and the media
+' bar. All three ask for them within moments of launch, so without this the server gets the same
+' request three times. Only called from Task threads: the memo lives on m.global and is shared across
+' threads, and a task that finds another task already fetching waits for that result instead of asking again.
+namespace userViews
+    ' Views change rarely, so a minute of reuse covers a Home load without showing stale libraries for long
+    const MAX_AGE_MS = 60000
+
+    ' How long a task waits on another task's fetch before fetching itself
+    const WAIT_MS = 5000
+
+    function Get(userId as string) as dynamic
+        scope = toString(get_url()) + "|" + userId
+        ' A fetch that was under way when Forget ran can still store its answer, so the memo is only
+        ' used under the generation it was fetched in
+        generation = userViews.CurrentGeneration()
+
+        ' Each read of m.global from a task is an expensive cross-thread call, so read it once. A memo
+        ' that is empty or missing is replaced with an empty AA, so its keys read as invalid, not as a crash.
+        memo = m.global.userViewsMemo
+        if type(memo) <> "roAssociativeArray" then memo = {}
+        now = Int(UpTime(0) * 1000)
+
+        if isStringEqual(memo.scope, scope) and isValid(memo.data) and isValid(memo.at) and userViews.InGeneration(memo, generation)
+            if now - memo.at < MAX_AGE_MS
+                return memo.data
+            end if
+        end if
+
+        if isStringEqual(memo.scope, scope) and isValid(memo.pendingAt) and userViews.InGeneration(memo, generation)
+            if now - memo.pendingAt < WAIT_MS
+                ' Told when the other fetch stores its answer, rather than asking the global node over and
+                ' over: each ask waits on the render thread, which is busiest while Home starts
+                waitStart = now
+                port = CreateObject("roMessagePort")
+                m.global.observeFieldScoped("userViewsMemo", port)
+                ' It may have landed before the observer was in place
+                memo = m.global.userViewsMemo
+                while true
+                    if type(memo) <> "roAssociativeArray" then memo = {}
+                    if isStringEqual(memo.scope, scope) and isValid(memo.data) and userViews.InGeneration(memo, generation)
+                        m.global.unobserveFieldScoped("userViewsMemo")
+                        return memo.data
+                    end if
+                    ' The pending marker is gone when the other fetch failed
+                    if not isStringEqual(memo.scope, scope) or not isValid(memo.pendingAt) or not userViews.InGeneration(memo, generation) then exit while
+                    left = WAIT_MS - (Int(UpTime(0) * 1000) - waitStart)
+                    if left <= 0 then exit while
+                    msg = wait(left, port)
+                    if type(msg) <> "roSGNodeEvent" then exit while
+                    memo = msg.getData()
+                end while
+                m.global.unobserveFieldScoped("userViewsMemo")
+            end if
+        end if
+
+        fetchStart = Int(UpTime(0) * 1000)
+        m.global.userViewsMemo = { scope: scope, pendingAt: fetchStart, generation: generation }
+
+        data = api.GetUserViews({ "userId": userId })
+        ' Forget replaces the pending marker, and libraries asked for before it may be the old ones, so
+        ' they are returned but not kept. Two tasks can both find the memo empty and both fetch, since
+        ' a task can't read and claim the global node in one step. The first answer then fills the
+        ' memo whichever marker is up, so the tasks waiting on the other fetch take it.
+        current = m.global.userViewsMemo
+        if type(current) <> "roAssociativeArray" then current = {}
+        sameMemo = isStringEqual(current.scope, scope) and userViews.InGeneration(current, generation)
+        stillOurs = false
+        if sameMemo and isValid(current.pendingAt) then stillOurs = current.pendingAt = fetchStart
+        if isChainValid(data, "items")
+            if sameMemo and isValid(current.pendingAt)
+                fetchEnd = Int(UpTime(0) * 1000)
+                m.global.userViewsMemo = { scope: scope, at: fetchEnd, data: data, generation: generation }
+            end if
+        else if stillOurs
+            ' Clear the pending marker so a waiting task fetches instead of timing out
+            m.global.userViewsMemo = {}
+        end if
+
+        return data
+    end function
+
+    ' How many times the memo has been forgotten
+    function CurrentGeneration() as integer
+        generation = m.global.userViewsGeneration
+        if type(generation) <> "roInt" and type(generation) <> "Integer" then return 0
+        return generation
+    end function
+
+    ' Whether the memo was written under this generation. A memo from before generations, or an
+    ' empty one, has none and is not used.
+    function InGeneration(memo as object, generation as integer) as boolean
+        value = memo.generation
+        if type(value) <> "roInt" and type(value) <> "Integer" then return false
+        return value = generation
+    end function
+
+    sub Forget()
+        m.global.userViewsGeneration = userViews.CurrentGeneration() + 1
+        m.global.userViewsMemo = {}
+    end sub
+end namespace

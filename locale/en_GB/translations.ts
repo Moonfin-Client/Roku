@@ -4731,5 +4731,13 @@
         <source>Server Recommends</source>
         <translation>Server Recommends</translation>
     </message>
+    <message>
+        <source>Show Description on Pause</source>
+        <translation>Show Description on Pause</translation>
+    </message>
+    <message>
+        <source>Dim video and show overview text while paused</source>
+        <translation>Dim video and show overview text while paused</translation>
+    </message>
 </context>
 </TS>

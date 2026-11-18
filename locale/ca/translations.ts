@@ -9802,5 +9802,13 @@
         <source>Modern cards over a panel with the focused title&apos;s details.</source>
         <translation>Targetes modernes sobre un panell amb els detalls del títol que té el focus.</translation>
     </message>
+    <message>
+        <source>Show Description on Pause</source>
+        <translation>Mostra la descripció a Pausa</translation>
+    </message>
+    <message>
+        <source>Dim video and show overview text while paused</source>
+        <translation>Atenua el vídeo i mostra el text general mentre estàs en pausa</translation>
+    </message>
 </context>
 </TS>

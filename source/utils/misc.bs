@@ -492,14 +492,93 @@ function chainLookupReturn(root as dynamic, propertyPath as string, default as d
     return rootPath
 end function
 
+' The startup prefetch's answer to a GET of this url as an roUrlEvent, or invalid (startupPrefetch.bs).
+' Only Main's thread has a prefetch, so anywhere else this is one lookup.
+function startupPrefetchAnswer(url as string) as dynamic
+    prefetch = m.startupPrefetch
+    if type(prefetch) <> "roAssociativeArray" then return invalid
+    prefetch.Note(url)
+    return prefetch.Take(url)
+end function
+
+' The session as of its last change. Every read of m.global.session copies all of it, the user's
+' settings alone being some 400 keys, and Home's cards, nav and clock read it many times while
+' loading. This keeps one copy per scope and reads the session again only after sessionVersion
+' moves. Callers must not change what it returns: the copy is shared by the whole scope.
+'
+' Main and the tasks keep their copy. A component keeps one only when its init sets
+' m.keepsSessionCopy, since each component has its own m and Home holds hundreds of cards: the rest
+' read the session afresh, so a card should read it once per handler and pass that along.
+function sessionNow() as dynamic
+    if not isValid(m.global) then return invalid
+    ' A global without the version (tests hand in a plain AA) is read every time
+    if type(m.global) <> "roSGNode" or not m.global.hasField("sessionVersion") then return m.global.session
+    threadAA = GetGlobalAA()
+    if isValid(threadAA.top) and threadAA.keepsSessionCopy <> true and not onTaskThread() then return m.global.session
+    now = Int(UpTime(0) * 1000)
+    if reusableOnTask(threadAA.sessionNowCopy, threadAA.sessionNowCheckedAt, now) then return threadAA.sessionNowCopy
+    version = m.global.sessionVersion
+    if threadAA.sessionNowVersion <> version or not isValid(threadAA.sessionNowCopy)
+        threadAA.sessionNowCopy = m.global.session
+        threadAA.sessionNowVersion = version
+    end if
+    threadAA.sessionNowCheckedAt = now
+    return threadAA.sessionNowCopy
+end function
+
+' Replaces the session and moves sessionVersion, so sessionNow readers pick the change up. The
+' writing thread's own copy is replaced too, so it reads back what it just wrote.
+sub storeSession(newSession as object)
+    if type(m.global) <> "roSGNode"
+        m.global.session = newSession
+        return
+    end if
+    version = 0
+    if m.global.hasField("sessionVersion") then version = m.global.sessionVersion
+    m.global.setFields({ session: newSession, sessionVersion: version + 1 })
+    threadAA = GetGlobalAA()
+    threadAA.sessionNowCopy = newSession
+    threadAA.sessionNowVersion = version + 1
+    threadAA.sessionNowCheckedAt = Int(UpTime(0) * 1000)
+end sub
+
+' The signed in server's url and type (m.global.serverIdentity), reused like sessionNow on a task
+function serverIdentityNow() as dynamic
+    if not isValid(m.global) then return invalid
+    threadAA = GetGlobalAA()
+    now = Int(UpTime(0) * 1000)
+    if reusableOnTask(threadAA.serverIdentityCopy, threadAA.serverIdentityAt, now) then return threadAA.serverIdentityCopy
+    threadAA.serverIdentityCopy = m.global.serverIdentity
+    threadAA.serverIdentityAt = now
+    return threadAA.serverIdentityCopy
+end function
+
+' A task waits on the render thread for every m.global read, and Home's row tasks make well over
+' a hundred while the render thread is busy laying rows out. So a task reuses what it read for up to
+' a second. The render and main threads always check, since they react to changes as they happen.
+function reusableOnTask(copy as dynamic, readAt as dynamic, now as integer) as boolean
+    if not isValid(copy) or not isValid(readAt) then return false
+    if now - readAt >= 1000 then return false
+    return onTaskThread()
+end function
+
+function onTaskThread() as boolean
+    threadAA = GetGlobalAA()
+    if threadAA.onTaskThread = invalid
+        topNode = threadAA.top
+        threadAA.onTaskThread = type(topNode) = "roSGNode" and topNode.isSubtype("Task")
+    end if
+    return threadAA.onTaskThread
+end function
+
 ' Returns true when the modern home rows style is selected. Carousel rows are Modern rows with a
 ' details panel under the cards.
 function isModernHomeRows() as boolean
-    return not isStringEqual(chainLookupReturn(m.global.session, "user.settings.`ui.home.rowsStyle`", "carousel"), "v1")
+    return not isStringEqual(chainLookupReturn(sessionNow(), "user.settings.`ui.home.rowsStyle`", "carousel"), "v1")
 end function
 
 function isCarouselHomeRows() as boolean
-    return isStringEqual(chainLookupReturn(m.global.session, "user.settings.`ui.home.rowsStyle`", "carousel"), "carousel")
+    return isStringEqual(chainLookupReturn(sessionNow(), "user.settings.`ui.home.rowsStyle`", "carousel"), "carousel")
 end function
 
 ' Returns true when Home shows the focused item's title and details above the rows, which only
@@ -528,7 +607,7 @@ function homeRowsVerticalSpacing(modernRows as boolean, storedPadding = invalid 
 
     ' A stored value isn't guaranteed to be a number in range, and the formula turns anything
     ' below the minimum into negative spacing, so fall back instead
-    if not isValid(storedPadding) then storedPadding = m.global.session.user.settings[paddingKey]
+    if not isValid(storedPadding) then storedPadding = sessionNow().user.settings[paddingKey]
     padding = Val(isValid(storedPadding) ? storedPadding.ToStr() : "")
     if padding < minPadding or padding > maxPadding then padding = defaultPadding
 
@@ -548,7 +627,7 @@ end function
 ' a thumbnail row shows an episode's own image. Settings are stored flat, so the key is one path
 ' segment, and a plugin sync writes it as a string.
 function prefersThumbnails() as boolean
-    preferThumbnails = chainLookupReturn(m.global.session, "user.settings.`ui.home.preferThumbnails`", false)
+    preferThumbnails = chainLookupReturn(sessionNow(), "user.settings.`ui.home.preferThumbnails`", false)
     if type(preferThumbnails) = "String" or type(preferThumbnails) = "roString"
         return LCase(preferThumbnails) = "true"
     end if
@@ -672,7 +751,7 @@ end function
 ' @param {string} settingKey - user setting key to read
 ' @return {dynamic} the preferred language code, or invalid when there is no preference
 function getPreferredLanguage(settingKey as string) as dynamic
-    value = chainLookupReturn(m.global.session, "user.settings.`" + settingKey + "`", invalid)
+    value = chainLookupReturn(sessionNow(), "user.settings.`" + settingKey + "`", invalid)
     if isStringEqual(value, "anyLanguage") then return invalid
     return value
 end function
@@ -818,10 +897,10 @@ end function
 '
 ' @return {integer} Blur amount (0 to 25) from user settings, or 10 if not set
 function getBackdropBlurAmount() as integer
-    if not isValid(m.global) or not isValid(m.global.session) then return 10
-    if not isValid(m.global.session.user) or not isValid(m.global.session.user.settings) then return 10
+    if not isValid(m.global) or not isValid(sessionNow()) then return 10
+    if not isValid(sessionNow().user) or not isValid(sessionNow().user.settings) then return 10
 
-    blurSetting = m.global.session.user.settings["ui.backdrop.detailBlurAmount"]
+    blurSetting = sessionNow().user.settings["ui.backdrop.detailBlurAmount"]
     if isValid(blurSetting)
         blurValue = val(blurSetting)
         if blurValue >= 0 and blurValue <= 25
@@ -836,10 +915,10 @@ end function
 ' Get backdrop blur amount for home and discovery screens (home, genres, favorites)
 ' @return {integer} Blur amount from user settings, or 10 if not set
 function getHomeBackdropBlurAmount() as integer
-    if not isValid(m.global) or not isValid(m.global.session) then return 10
-    if not isValid(m.global.session.user) or not isValid(m.global.session.user.settings) then return 10
+    if not isValid(m.global) or not isValid(sessionNow()) then return 10
+    if not isValid(sessionNow().user) or not isValid(sessionNow().user.settings) then return 10
 
-    blurSetting = m.global.session.user.settings["ui.backdrop.homeBlurAmount"]
+    blurSetting = sessionNow().user.settings["ui.backdrop.homeBlurAmount"]
     if isValid(blurSetting)
         blurValue = val(blurSetting)
         if blurValue >= 0 and blurValue <= 20
@@ -863,7 +942,7 @@ end function
 
 ' Autoplay needs the server switch and the switch here, so either one can turn it off
 function isAutoplayNextEpisodeEnabled() as boolean
-    if not chainLookupReturn(m.global.session, "user.Configuration.EnableNextEpisodeAutoPlay", false) then return false
+    if not chainLookupReturn(sessionNow(), "user.Configuration.EnableNextEpisodeAutoPlay", false) then return false
 
     return get_user_setting_bool("playback.autoplaynextepisode", true)
 end function
@@ -873,10 +952,10 @@ end function
 '
 ' @return {boolean} True if theme music auto-play is enabled, false otherwise
 function isThemeMusicEnabled() as boolean
-    if not isValid(m.global) or not isValid(m.global.session) then return false
-    if not isValid(m.global.session.user) or not isValid(m.global.session.user.settings) then return false
+    if not isValid(m.global) or not isValid(sessionNow()) then return false
+    if not isValid(sessionNow().user) or not isValid(sessionNow().user.settings) then return false
 
-    themeMusicSetting = toBoolean(m.global.session.user.settings["playback.thememusic.enabled"])
+    themeMusicSetting = toBoolean(sessionNow().user.settings["playback.thememusic.enabled"])
     settingType = LCase(Type(themeMusicSetting))
 
     if settingType = "boolean" or settingType = "roboolean"
@@ -1129,6 +1208,19 @@ end function
 ' Format overlay color setting to a valid SceneGraph color string.
 function formatOverlayColor(colorSetting as dynamic, defaultColor as string) as string
     return formatSceneGraphColor(colorSetting, defaultColor)
+end function
+
+' MakD's scrim is makd's charcoal with 30% of the overlay color mixed in, so a bright pick like
+' Neon Magenta tints the art without flooding it behind white text
+function makdTint(color as string) as string
+    hex = Mid(color, 3, 6)
+    mixed = ""
+    for i = 0 to 2
+        channel = Val(Mid(hex, i * 2 + 1, 2), 16)
+        value = Int(&h1D + (channel - &h1D) * 0.3 + 0.5)
+        mixed += Right("0" + StrI(value, 16), 2)
+    end for
+    return "0x" + UCase(mixed) + "FF"
 end function
 
 ' convert value to boolean and return value
