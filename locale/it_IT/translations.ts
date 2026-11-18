@@ -7848,5 +7848,21 @@
         <source>Dim video and show overview text while paused</source>
         <translation>Oscura il video e mostra il testo della panoramica in pausa</translation>
     </message>
+    <message>
+        <source>Hide Watch Progress</source>
+        <translation>Nascondi Avanzamento Visione</translation>
+    </message>
+    <message>
+        <source>Hide the progress bar on posters you&apos;ve started watching.</source>
+        <translation>Nasconde la barra di avanzamento sui poster che hai iniziato a guardare.</translation>
+    </message>
+    <message>
+        <source>Hide Unwatched Count</source>
+        <translation>Nascondi Numero Non Visti</translation>
+    </message>
+    <message>
+        <source>Hide the badge showing how many episodes are left to watch.</source>
+        <translation>Nasconde il badge che indica quanti episodi restano da guardare.</translation>
+    </message>
 </context>
 </TS>
