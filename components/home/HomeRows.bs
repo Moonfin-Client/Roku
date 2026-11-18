@@ -84,6 +84,7 @@ sub init()
     ' Initialize libraryData to prevent access before loading
     m.libraryData = []
     m.filteredLatest = []
+    m.libraryRowOrder = {}
     m.emptySections = {}
 
     ' Library sections wait for the library list. Until it lands, they are kept in librarySections.
@@ -162,6 +163,7 @@ end sub
 
 sub beginBuild()
     dropEarlierRowWork()
+    m.libraryRowOrder = {}
     m.buildInFlight = true
     m.buildCount++
     m.flushedThisBuild = false
@@ -363,8 +365,9 @@ sub runRowTask(task as object, field as string, handler as string, first = false
 
     ' The OS would drop a second RUN on a running task. Its answer may already be in, so it runs again
     ' once it stops (onRowTaskState). The running answer is ignored, and the callback is watched again
-    ' when the new run starts.
-    if task.state = "run"
+    ' when the new run starts. A task that has stopped still holds its slot until onRowTaskState
+    ' frees it, so starting it now would count it twice.
+    if task.state = "run" or task.rowRunning
         task.unobserveField(field)
         task.rowRerun = true
         return
@@ -1044,6 +1047,11 @@ function keepCachedCards(cached as dynamic, fresh as object) as boolean
     count = fresh.getChildCount()
     if count = 0 or count <> cached.getChildCount() then return false
     if fresh.getChild(0).sameAsCached <> true then return false
+    ' A run that timed out may have rewritten the saved file after these cards were painted, so the
+    ' cards themselves have to match too
+    for i = 0 to count - 1
+        if cached.getChild(i).id <> fresh.getChild(i).id then return false
+    end for
 
     for i = 0 to count - 1
         cachedCard = cached.getChild(i)
@@ -1080,9 +1088,10 @@ sub queueLabels(rows as object)
 end sub
 
 ' startLabels: Asks Home for the labels of the ids waiting, unless a request is still out. Its answer
-' starts the next one.
+' starts the next one. A request is out until its answer clears labelIdsAsked, even once the task has
+' stopped, so a new one never replaces the ids still waiting for that answer.
 sub startLabels()
-    if m.labelIdsWaiting.count() = 0 or m.labelsTask.state = "run" then return
+    if m.labelIdsWaiting.count() = 0 or m.labelIdsAsked.count() > 0 then return
 
     m.labelIdsAsked = m.labelIdsWaiting
     m.labelIdsWaiting = []
@@ -1131,10 +1140,15 @@ sub sortHomeRows()
     ' Resolve the section names and localized titles once so scoring stays cheap
     matchers = buildSectionMatchers()
 
-    ' Score every row once rather than recomputing during each comparison
+    ' Score every row once rather than recomputing during each comparison. Each library's row shares
+    ' its section's place, so the library order this build read breaks the tie. A cached row from
+    ' before the libraries came back keeps its saved place until then.
     indexes = []
     for each child in children
-        indexes.push(getOriginalSettingIndexForNode(child, matchers))
+        index = getOriginalSettingIndexForNode(child, matchers) * 1000
+        libraryOrder = m.libraryRowOrder[child.title]
+        if isValid(libraryOrder) then index += libraryOrder
+        indexes.push(index)
     end for
 
     ' Stable insertion sort based on settings index
@@ -1654,6 +1668,7 @@ sub createLatestInRows()
                 loadLatest.metadata = metadata
                 m.latestRequests[sectionName] = { itemIds: libIds, itemId: firstLib.id, metadata: metadata }
 
+                m.libraryRowOrder[sectionName] = i
                 loadLatest.cacheRow = cacheRowFor("latestmedia", sectionName, i)
                 runRowTask(loadLatest, "content", "updateLatestItems")
             catch e
@@ -1684,6 +1699,7 @@ sub createLatestInRows()
                 loadLatest.metadata = metadata
                 m.latestRequests[sectionName] = { itemIds: [], itemId: lib.id, metadata: metadata }
 
+                m.libraryRowOrder[sectionName] = i
                 loadLatest.cacheRow = cacheRowFor("latestmedia", sectionName, i)
                 runRowTask(loadLatest, "content", "updateLatestItems")
             catch e
@@ -1717,6 +1733,7 @@ sub createRecentlyReleasedRow()
                 metadata.Append({ "contentType": lib.json.CollectionType })
                 loadLatest.metadata = metadata
 
+                m.libraryRowOrder[sectionName] = i
                 loadLatest.cacheRow = cacheRowFor("recentlyreleased", sectionName, i)
                 runRowTask(loadLatest, "content", "updateRecentlyReleasedItems")
             catch e

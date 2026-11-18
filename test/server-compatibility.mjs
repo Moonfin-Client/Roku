@@ -1613,6 +1613,12 @@ assert.match(homeRowsWiring, /m\.emptySections\[sectionTitle\] = true/, 'A secti
 assert.equal((homeRowsWiring.match(/if not sectionExists\(sectionName\) and not knownEmpty\(sectionName\)/g) || []).length, 12, 'Every placeholder skips a section known to be empty');
 assert.match(homeRowsWiring, /const EAGER_SECTION_COUNT = 8\s+const NEAR_ROWS_ABOVE = 2\s+const NEAR_ROWS_BELOW = 5\s+const LATE_ROW_LOADS = 3/, 'Picked rows past the first eight wait for focus to come near');
 assert.match(homeRowsWiring, /if holdsBack\(i, sectionName\)\s+holdBack\(sectionName\)/, 'Held back rows only get a placeholder');
+assert.match(homeRowsWiring, /if task\.state = "run" or task\.rowRunning\s+task\.unobserveField\(field\)\s+task\.rowRerun = true/, 'A row task that stopped but still holds its slot runs again once it frees it, so it is never counted twice');
+assert.match(homeRowsWiring, /sub startLabels\(\)\s+if m\.labelIdsWaiting\.count\(\) = 0 or m\.labelIdsAsked\.count\(\) > 0 then return/, 'A label request waits for the last answer, so the ids still out are never dropped');
+assert.match(homeRowsWiring, /index = getOriginalSettingIndexForNode\(child, matchers\) \* 1000\s+libraryOrder = m\.libraryRowOrder\[child\.title\]/, "Each library's row sorts by the library order the build read, not where its saved copy was painted");
+assert.equal((homeRowsWiring.match(/m\.libraryRowOrder\[sectionName\] = i/g) || []).length, 3, 'Every Recently Added and Recently Released row records its library order');
+assert.match(homeRowsWiring, /if cached\.getChild\(i\)\.id <> fresh\.getChild\(i\)\.id then return false/, 'Cached cards are kept only when they are the fresh row\'s cards');
+assert.match(await readFile('components/home/LoadItemsTask.bs', 'utf8'), /itemsSig = homeCache\.Signature\(items\) \+ "@" \+ toString\(cacheRow\.order\)/, 'A saved row moved by a library reorder is saved again');
 const syncWiring = await readFile('source/utils/settingsSync.bs', 'utf8');
 for (const key of ['imdb', 'tmdb', 'seerr']) {
     assert.match(syncWiring, new RegExp(`\\{ pluginKey: "${key}RowsSortBy", rokuKey: "${key}\\.rowsSortBy", type: "direct" \\}`), `The ${key} sort syncs`);
