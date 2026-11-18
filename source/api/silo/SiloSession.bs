@@ -33,6 +33,9 @@ namespace silo
     const TIMEOUT_MS = 15000
     ' How long another thread's refresh is waited on before this one tries itself
     const LOCK_MS = 10000
+    ' Long enough to share one Home load's lookups across its row tasks, short enough that a
+    ' settings change shows on the next screen
+    const MEMO_MS = 10000
 
     ' A step of what the app does on a Silo server, printed to the debug console (port 8085)
     sub Trace(message as string)
@@ -165,6 +168,8 @@ namespace silo
             end if
         end for
         reg.Flush()
+        ' Cleared last, so a read that went out while the login was still there can't refill it
+        silo.ForgetMemos()
     end sub
 
     ' Which login a profile acts under. Profile ids are UUIDs, so they don't clash between servers
@@ -209,6 +214,8 @@ namespace silo
             entry.proofExpires = expiresAt
         end if
         registry_write(profileId, FormatJson(entry), silo.PROFILES_SECTION)
+        ' A memo answers before the proof is checked, so a profile that lost its proof can't be read from one
+        if token = "" then silo.ForgetMemos()
     end sub
 
     ' Whether a profile's PIN is remembered on this Roku, as last chosen at its PIN prompt (yes until
@@ -284,14 +291,7 @@ namespace silo
     ' One HTTP exchange. Answers { status, data, text, retryAfter }, status 0 when nothing came back
     function Exchange(method as string, url as string, headers as object, body = invalid as dynamic, timeoutMs = 0 as integer) as object
         if timeoutMs <= 0 then timeoutMs = silo.TIMEOUT_MS
-        req = CreateObject("roUrlTransfer")
-        req.SetUrl(url)
-        if LCase(url).Left(8) = "https://" then req.SetCertificatesFile("common:/certs/ca-bundle.crt")
-        req.RetainBodyOnError(true)
-        req.AddHeader("Accept", "application/json, application/problem+json")
-        for each name in headers
-            req.AddHeader(name, headers[name])
-        end for
+        req = silo.NewRequest(url, headers)
         port = CreateObject("roMessagePort")
         req.SetMessagePort(port)
         method = UCase(method)
@@ -321,6 +321,23 @@ namespace silo
             diagnostics.Network("Silo " + method + " " + silo.PathOf(url) + " timed out", diagnostics.LEVEL_WARN)
             return answer
         end if
+        return silo.AnswerOf(event, method, url, payload)
+    end function
+
+    function NewRequest(url as string, headers as object) as object
+        req = CreateObject("roUrlTransfer")
+        req.SetUrl(url)
+        if LCase(url).Left(8) = "https://" then req.SetCertificatesFile("common:/certs/ca-bundle.crt")
+        req.RetainBodyOnError(true)
+        req.AddHeader("Accept", "application/json, application/problem+json")
+        for each name in headers
+            req.AddHeader(name, headers[name])
+        end for
+        return req
+    end function
+
+    function AnswerOf(event as object, method as string, url as string, payload as string) as object
+        answer = { status: 0, data: invalid, text: "", retryAfter: "" }
         answer.status = event.GetResponseCode()
         if answer.status < 0 then answer.status = 0
         answer.text = event.GetString() ?? ""
@@ -401,6 +418,103 @@ namespace silo
         return false
     end function
 
+    ' The Silo lookups that every row of one Home load asks for again. "ok" ones are kept after a
+    ' 2xx answer, "missing" ones (plugin content that 404s every time) after a 404
+    function MemoKind(path as string) as string
+        okPrefixes = ["/api/v2/home/layout", "/api/v2/settings/plugins", "/api/v2/settings/values/effective", "/api/v2/user/libraries"]
+        for each prefix in okPrefixes
+            if path.Left(prefix.Len()) = prefix then return "ok"
+        end for
+        missingPrefix = "/api/v2/plugin-content/"
+        if path.Left(missingPrefix.Len()) = missingPrefix then return "missing"
+        return ""
+    end function
+
+    ' A deep copy, so a caller that changes its answer can't change the memo. Falls back to the
+    ' original when it can't be copied
+    function MemoCopy(result as dynamic) as dynamic
+        if type(result) <> "roAssociativeArray" then return result
+        text = FormatJson(result)
+        if text = "" then return result
+        copied = ParseJson(text)
+        if not isValid(copied) then return result
+        return copied
+    end function
+
+    ' An entry is fresh while it is young and no write has happened anywhere since its request went out
+    function MemoFresh(entry as dynamic, now as integer, generation as integer) as boolean
+        if type(entry) <> "roAssociativeArray" then return false
+        if not isValid(entry.at) or not isValid(entry.generation) then return false
+        if entry.generation <> generation then return false
+        return now - entry.at < silo.MEMO_MS
+    end function
+
+    ' How many times any thread has cleared the memo. Each thread keeps its own copies, so this is
+    ' how a write on one thread reaches the copies on the others.
+    function MemoGeneration() as integer
+        if not isValid(m) or not isValid(m.global) then return 0
+        generation = m.global.siloMemoGeneration
+        if type(generation) <> "roInt" and type(generation) <> "Integer" then return 0
+        return generation
+    end function
+
+    ' A fresh entry from this thread's memo, or from the global one (copied into this thread's memo)
+    function MemoEntry(key as string, generation as integer) as dynamic
+        if not isValid(m) then return invalid
+        if type(m.siloMemo) <> "roAssociativeArray" then m.siloMemo = {}
+        now = Int(UpTime(0) * 1000)
+        entry = m.siloMemo[key]
+        if silo.MemoFresh(entry, now, generation) then return entry
+        m.siloMemo.Delete(key)
+
+        if not isValid(m.global) then return invalid
+        shared = m.global.siloMemo
+        if type(shared) <> "roAssociativeArray" then return invalid
+        entry = shared[key]
+        if not silo.MemoFresh(entry, now, generation) then return invalid
+        m.siloMemo[key] = entry
+        return entry
+    end function
+
+    ' Keeps an answer for the next lookup of the same key, under the generation its request went out
+    ' in. The global copy is rewritten whole, so two threads may race and lose an entry, which only
+    ' costs one more request
+    sub MemoStore(key as string, kind as string, status as integer, result as object, generation as integer)
+        if not ((kind = "ok" and status >= 200 and status < 300) or (kind = "missing" and status = 404)) then return
+        if not isValid(m) then return
+        now = Int(UpTime(0) * 1000)
+        entry = { at: now, generation: generation, result: silo.MemoCopy(result) }
+        if type(m.siloMemo) <> "roAssociativeArray" then m.siloMemo = {}
+        ' Long lived tasks keep their memo, so old answers go as new ones come in
+        for each oldKey in m.siloMemo.Keys()
+            if not silo.MemoFresh(m.siloMemo[oldKey], now, generation) then m.siloMemo.Delete(oldKey)
+        end for
+        m.siloMemo[key] = entry
+        if not isValid(m.global) then return
+
+        shared = {}
+        current = m.global.siloMemo
+        if type(current) = "roAssociativeArray"
+            for each oldKey in current
+                if silo.MemoFresh(current[oldKey], now, generation) then shared[oldKey] = current[oldKey]
+            end for
+        end if
+        shared[key] = entry
+        m.global.siloMemo = shared
+    end sub
+
+    ' Drops every memoed answer, so no read after a write or a sign-out is answered from before it.
+    ' Other threads' copies go stale with the generation.
+    sub ForgetMemos()
+        if not isValid(m) then return
+        if type(m.siloMemo) = "roAssociativeArray" and m.siloMemo.Count() > 0 then m.siloMemo = {}
+        if isValid(m.global)
+            m.global.siloMemoGeneration = silo.MemoGeneration() + 1
+            shared = m.global.siloMemo
+            if type(shared) = "roAssociativeArray" and shared.Count() > 0 then m.global.siloMemo = {}
+        end if
+    end sub
+
     ' One request to Silo's /api/v2.
     '
     ' options:
@@ -422,14 +536,27 @@ namespace silo
         useProfile = options.profile <> false
         canRefresh = options.refresh <> false
         canReplay = canRefresh and options.replay <> false
-        url = path
-        if LCase(path).Left(4) <> "http" then url = base + path
-        query = silo.EncodeQuery(options.query)
-        if query <> ""
-            if Instr(1, url, "?") > 0
-                url = url + "&" + query
-            else
-                url = url + "?" + query
+        url = silo.UrlOf(base, path, options.query)
+
+        ' A write clears the memo, so a read after it is never answered from before it
+        memoKey = ""
+        memoRule = ""
+        memoGen = 0
+        if method <> "GET"
+            silo.ForgetMemos()
+        else if options.body = invalid
+            memoRule = silo.MemoKind(silo.PathOf(url))
+            if memoRule <> ""
+                ' Everything that changes what Silo answers: an account-wide call and extra headers too
+                memoScope = "profile"
+                if not useProfile then memoScope = "account"
+                memoKey = base + "|" + accountId + "|" + profileId + "|" + memoScope + "|" + url
+                if type(options.headers) = "roAssociativeArray" then memoKey = memoKey + "|" + FormatJson(options.headers)
+                memoGen = silo.MemoGeneration()
+                entry = silo.MemoEntry(memoKey, memoGen)
+                if isValid(entry)
+                    return silo.MemoCopy(entry.result)
+                end if
             end if
         end if
 
@@ -451,7 +578,108 @@ namespace silo
                 if isValid(tokens) then answer = silo.Exchange(method, url, silo.RequestHeaders(tokens, profileId, useProfile, options.headers), options.body, options.timeoutMs ?? 0)
             end if
         end if
-        return silo.ResultOf(answer)
+        result = silo.ResultOf(answer)
+        ' A read that went out while the write was on its way may hold what it replaced
+        if method <> "GET" then silo.ForgetMemos()
+        if memoRule <> "" then silo.MemoStore(memoKey, memoRule, answer.status, result, memoGen)
+        return result
+    end function
+
+    ' Several GETs on one account, at most four in flight, answered in the order asked. One that
+    ' comes back 401 goes again through Call, which refreshes the token and replays it.
+    function CallMany(server as string, calls as object, options = {} as object) as object
+        if calls.Count() = 0 then return []
+        base = silo.ServerKey(server)
+        accountId = options.account ?? ""
+        tokens = invalid
+        if accountId <> ""
+            tokens = silo.LoadTokens(base, accountId)
+            if isValid(tokens) and options.refresh <> false and silo.NeedsRefresh(tokens)
+                silo.Refresh(base, accountId, tokens.access)
+                tokens = silo.LoadTokens(base, accountId)
+            end if
+        end if
+        if accountId <> "" and not isValid(tokens)
+            results = []
+            for each call in calls
+                results.Push(silo.Failed(401))
+            end for
+            return results
+        end if
+        answers = []
+        for each call in calls
+            answers.Push({ status: 0, data: invalid, text: "", retryAfter: "" })
+        end for
+
+        headers = silo.RequestHeaders(tokens, options.profileId ?? "", options.profile <> false, options.headers)
+        port = CreateObject("roMessagePort")
+        ' Each transfer gets its own deadline, so answers to the others don't extend its wait.
+        clock = CreateObject("roTimespan")
+        inFlight = {}
+        nextCall = 0
+        while nextCall < calls.Count() or inFlight.Count() > 0
+            while nextCall < calls.Count() and inFlight.Count() < 4
+                url = silo.UrlOf(base, calls[nextCall].path, calls[nextCall].query)
+                req = silo.NewRequest(url, headers)
+                req.SetMessagePort(port)
+                if req.AsyncGetToString() then inFlight[req.GetIdentity().ToStr()] = { req: req, index: nextCall, url: url, deadline: clock.TotalMilliseconds() + silo.TIMEOUT_MS }
+                nextCall++
+            end while
+            if inFlight.Count() > 0
+                nearest = invalid
+                for each key in inFlight
+                    if nearest = invalid or inFlight[key].deadline < nearest then nearest = inFlight[key].deadline
+                end for
+                waitMs = nearest - clock.TotalMilliseconds()
+                if waitMs < 1 then waitMs = 1
+                event = wait(waitMs, port)
+                if type(event) = "roUrlEvent" and event.GetInt() = 1
+                    key = event.GetSourceIdentity().ToStr()
+                    sent = inFlight[key]
+                    if sent <> invalid
+                        answers[sent.index] = silo.AnswerOf(event, "GET", sent.url, "")
+                        inFlight.Delete(key)
+                    end if
+                end if
+                now = clock.TotalMilliseconds()
+                expired = []
+                for each key in inFlight
+                    if inFlight[key].deadline <= now then expired.Push(key)
+                end for
+                for each key in expired
+                    inFlight[key].req.AsyncCancel()
+                    diagnostics.Network("Silo GET " + silo.PathOf(inFlight[key].url) + " timed out", diagnostics.LEVEL_WARN)
+                    inFlight.Delete(key)
+                end for
+            end if
+        end while
+
+        results = []
+        for i = 0 to calls.Count() - 1
+            if answers[i].status = 401 and isValid(tokens) and options.refresh <> false and options.replay <> false
+                again = {}
+                again.Append(options)
+                again.query = calls[i].query
+                results.Push(silo.Call(server, calls[i].path, again))
+            else
+                results.Push(silo.ResultOf(answers[i]))
+            end if
+        end for
+        return results
+    end function
+
+    function UrlOf(base as string, path as string, query as dynamic) as string
+        url = path
+        if LCase(path).Left(4) <> "http" then url = base + path
+        encoded = silo.EncodeQuery(query)
+        if encoded <> ""
+            if Instr(1, url, "?") > 0
+                url = url + "&" + encoded
+            else
+                url = url + "?" + encoded
+            end if
+        end if
+        return url
     end function
 
     function RequestHeaders(tokens as dynamic, profileId as string, useProfile as boolean, extra as dynamic) as object

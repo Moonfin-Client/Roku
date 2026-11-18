@@ -7840,5 +7840,13 @@
         <source>Server Recommends</source>
         <translation>Suggerimenti del server</translation>
     </message>
+    <message>
+        <source>Show Description on Pause</source>
+        <translation>Mostra Descrizione in Pausa</translation>
+    </message>
+    <message>
+        <source>Dim video and show overview text while paused</source>
+        <translation>Oscura il video e mostra il testo della panoramica in pausa</translation>
+    </message>
 </context>
 </TS>

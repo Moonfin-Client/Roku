@@ -2678,5 +2678,13 @@
         <source>Parental Rating</source>
         <translation>تقييم ابوي</translation>
     </message>
+    <message>
+        <source>Show Description on Pause</source>
+        <translation>إظهار الوصف عند الإيقاف المؤقت</translation>
+    </message>
+    <message>
+        <source>Dim video and show overview text while paused</source>
+        <translation>تعتيم الفيديو وإظهار نص النظرة العامة أثناء الإيقاف المؤقت</translation>
+    </message>
 </context>
 </TS>
