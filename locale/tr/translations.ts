@@ -6485,5 +6485,21 @@
         <source>Dim video and show overview text while paused</source>
         <translation>Duraklatıldığında videoyu karart ve özet metnini göster</translation>
     </message>
+    <message>
+        <source>Hide Watch Progress</source>
+        <translation>İzleme İlerlemesini Gizle</translation>
+    </message>
+    <message>
+        <source>Hide the progress bar on posters you&apos;ve started watching.</source>
+        <translation>İzlemeye başladığınız posterlerdeki ilerleme çubuğunu gizler.</translation>
+    </message>
+    <message>
+        <source>Hide Unwatched Count</source>
+        <translation>İzlenmemiş Sayısını Gizle</translation>
+    </message>
+    <message>
+        <source>Hide the badge showing how many episodes are left to watch.</source>
+        <translation>İzlenecek kaç bölüm kaldığını gösteren rozeti gizler.</translation>
+    </message>
 </context>
 </TS>
