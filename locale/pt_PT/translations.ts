@@ -5342,5 +5342,9 @@
         <source>Dim video and show overview text while paused</source>
         <translation>Escurecer o vídeo e mostrar a sinopse durante a pausa</translation>
     </message>
+    <message>
+        <source>Hide Unwatched Count</source>
+        <translation>Ocultar contagem de conteúdo não visto</translation>
+    </message>
 </context>
 </TS>
