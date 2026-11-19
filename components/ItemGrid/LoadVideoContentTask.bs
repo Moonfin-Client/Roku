@@ -282,6 +282,21 @@ sub siloTrace(message as string)
     if isSiloServer(serverUrl) then silo.Trace(message)
 end sub
 
+' The tag of the logo the item names for logoId: its own, or its series' or parent's. "" when it
+' names none
+function logoTagFor(json as dynamic, logoId as string, videoId as string) as string
+    if type(json) <> "roAssociativeArray" or logoId = "" then return ""
+    tag = invalid
+    if isStringEqual(logoId, videoId) or isStringEqual(logoId, json.LookupCI("Id"))
+        imageTags = json.LookupCI("ImageTags")
+        if type(imageTags) = "roAssociativeArray" then tag = imageTags.LookupCI("Logo")
+    else if isStringEqual(logoId, json.LookupCI("ParentLogoItemId"))
+        tag = json.LookupCI("ParentLogoImageTag")
+    end if
+    if isString(tag) then return tag.Trim()
+    return ""
+end function
+
 sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_stream_idx = 1 as integer)
     siloTrace("load " + toString(video.id) + ", source " + toString(mediaSourceId))
 
@@ -436,10 +451,23 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
     end if
 
     logoSource = isStringEqual(videotype, ItemType.TVCHANNEL) ? ImageType.PRIMARY : ImageType.LOGO ' TV Channel logos are stored under '/primary' instead of '/logo'
-    logoImageExists = api.items.HeadImageURLByName(logoLookupID, logoSource)
-    if logoImageExists
-        ' The server trims the empty margin a logo is often padded with, where it knows how
-        video.logoImage = api.items.GetImageURL(logoLookupID, logoSource, 0, { "format": "Png", "maxWidth": 800, "quality": "90", "cropWhitespace": "true" })
+    ' The server trims the empty margin a logo is often padded with, where it knows how
+    logoParams = { "format": "Png", "maxWidth": 800, "quality": "90", "cropWhitespace": "true" }
+    ' A logo the item names is used as is, and the server is asked only when it names none.
+    ' Live TV keeps asking (a program's id is swapped for its channel's), and so does an item from
+    ' another signed-in server, as its tags don't fit the address built for the active one
+    activeServer = get_url() ?? ""
+    fromActiveServer = not isValid(serverData) or silo.ServerKey(serverData.serverUrl) = silo.ServerKey(activeServer)
+    isLive = isStringEqual(videotype, ItemType.TVCHANNEL) or isStringEqual(videotype, ItemType.PROGRAM)
+    logoTag = ""
+    if fromActiveServer and not isLive then logoTag = logoTagFor(meta.json, logoLookupID, video.id)
+    if logoTag <> "" then logoParams["tag"] = logoTag
+    ' Silo can't be asked, so without a tag its logo is one a screen recorded when it read the item,
+    ' as an episode's series logo is once the series has been opened (the episode's detail has none)
+    if logoTag <> "" or (fromActiveServer and not isLive and isSiloServer(activeServer))
+        video.logoImage = api.items.GetImageURL(logoLookupID, logoSource, 0, logoParams) ?? ""
+    else if api.items.HeadImageURLByName(logoLookupID, logoSource)
+        video.logoImage = api.items.GetImageURL(logoLookupID, logoSource, 0, logoParams)
     end if
 
     additionalParts = getAdditionalPartsForPlayback(video.id, serverData)
