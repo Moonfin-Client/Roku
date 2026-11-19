@@ -423,6 +423,20 @@ namespace silo
         return caps
     end function
 
+    ' The profile's search.media_scope (video, all or audiobook), the scope Silo's web app searches in.
+    ' Unreadable counts as Silo's default, video
+    function SearchMediaScope(r as object) as string
+        kept = silo.RecallAnswer("siloSearchScope", r.profileId, 60)
+        if kept <> invalid then return kept
+        answer = silo.ApiGet(r, "/api/v2/settings/values/effective", { keys: "search.media_scope" })
+        scope = "video"
+        for each setting in silo.ItemsOf(answer.data)
+            if setting.key = "search.media_scope" and (setting.value = "all" or setting.value = "audiobook") then scope = setting.value
+        end for
+        if answer.ok then silo.KeepAnswer("siloSearchScope", r.profileId, scope, 8)
+        return scope
+    end function
+
     ' ---- Seasons and episodes
 
     function SeasonsOf(r as object, seriesId as string) as dynamic
@@ -788,6 +802,16 @@ namespace silo
         if searchText <> ""
             caps = silo.SearchCapabilities(r)
             if not caps.allowed or caps.state <> "available" then return silo.Empty(start)
+            ' The search screen finds what Silo's web app finds: episodes only when the profile searches All
+            if q.LookupCI(SILO_SEARCH_SCREEN) = "true" and silo.SearchMediaScope(r) <> "all"
+                if types = invalid then types = ["movie", "series", "episode"]
+                withoutEpisodes = []
+                for each kind in types
+                    if kind <> "episode" then withoutEpisodes.Push(kind)
+                end for
+                types = withoutEpisodes
+                if types.Count() = 0 then return silo.Empty(start)
+            end if
             scope = siloMap.SearchScopeFor(types, caps.videoWithEpisodes)
         else if types <> invalid
             scope = siloMap.CatalogScopeFor(types)
@@ -977,7 +1001,9 @@ namespace silo
         return { Items: items, TotalRecordCount: items.Count(), StartIndex: 0 }
     end function
 
-    function SearchPeople(r as object, term as string, limit as integer) as object
+    ' forSearch is the search screen's, whose credits follow the profile's search scope; lookups by name
+    ' keep every video credit, so people only in episodes are still found
+    function SearchPeople(r as object, term as string, limit as integer, forSearch = false as boolean) as object
         caps = silo.SearchCapabilities(r)
         if not caps.allowed or caps.state <> "available" then return silo.Empty()
         query = {}
@@ -988,7 +1014,7 @@ namespace silo
         end if
         if caps.peopleMediaScope
             query.media_scope = "video"
-            if caps.videoWithEpisodes then query.media_scope = "video_with_episodes"
+            if caps.videoWithEpisodes and (not forSearch or silo.SearchMediaScope(r) = "all") then query.media_scope = "video_with_episodes"
         end if
         answer = silo.ApiGet(r, silo.CATALOG + "/people", query)
         items = []
