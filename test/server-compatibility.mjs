@@ -13,10 +13,10 @@ import bslib from '@rokucommunity/bslib';
 
 brs.registerExtension(() => new sceneGraph.BrightScriptExtension());
 
-// The device reads \0 in a Replace or ReplaceAll replacement as the whole match, \1 to \9 as captured
-// groups and $ as itself. brs-node hands ReplaceAll its replacement untouched and reads every \ in
-// Replace as a $, and its ReplaceAll leaves the regex global, so both run here on a copy of the pattern.
-const deviceReplacement = text => text.replace(/\$/g, '$$$$').replace(/\\0/g, '$$&').replace(/\\([1-9])/g, '$$$1');
+// The device reads \1 to \9 in a Replace or ReplaceAll replacement as captured groups and $ as itself.
+// brs-node hands ReplaceAll its replacement untouched and reads every \ in Replace as a $, and its
+// ReplaceAll leaves the regex global, so both run here on a copy of the pattern.
+const deviceReplacement = text => text.replace(/\$/g, '$$$$').replace(/\\([1-9])/g, '$$$1');
 const originalRegisterMethods = brs.types.RoRegex.prototype.registerMethods;
 brs.types.RoRegex.prototype.registerMethods = function (methods) {
     const replacing = (name, global) => new brs.types.Callable(name, {
@@ -32,7 +32,7 @@ brs.types.RoRegex.prototype.registerMethods = function (methods) {
             return new brs.types.BrsString(str.value.replace(new RegExp(this.jsRegex.source, flags), deviceReplacement(replacement.value)));
         },
     });
-    assert.ok(this.replace && this.replaceAll, 'brs-node built roRegex differently; the Replace stand ins need a look');
+    assert.ok(this.replace && this.replaceAll, 'brs-node built roRegex differently, so the Replace stand ins need a look');
     const stand = new Map([[this.replace, replacing('replace', false)], [this.replaceAll, replacing('replaceAll', true)]]);
     methods.ifRegex = methods.ifRegex.map(method => stand.get(method) ?? method);
     return originalRegisterMethods.call(this, methods);
@@ -78,6 +78,7 @@ const selections = {
     'components/details/SpotlightCards.bs': ['spotlightEpisodeSeason', 'spotlightEpisodeOrder', 'spotlightEpisodeFirst', 'spotlightBuilderPersonBackdrops', 'spotlightFirstUnused', 'spotlightBackdropOnlyUrl'],
     'source/utils/playbackFacts.bs': null,
     'source/utils/mediaBadges.bs': null,
+    'source/utils/themeChrome.bs': null,
     'source/utils/librarySorts.bs': null,
     'source/utils/libraryGroupBy.bs': null,
     'source/utils/libraryCard.bs': null,
