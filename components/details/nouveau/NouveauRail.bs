@@ -1,3 +1,4 @@
+import "pkg:/source/utils/homeCards.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/nouveauLayout.bs"
 import "pkg:/source/utils/themeApply.bs"
@@ -28,6 +29,14 @@ sub init()
     m.track = m.top.findNode("track")
     m.glide = m.top.findNode("glide")
     m.glideInterp = m.top.findNode("glideInterp")
+    m.growDriver = m.top.findNode("growDriver")
+    m.grow = m.top.findNode("grow")
+    m.growDriver.observeField("opacity", "showGrowth")
+    m.growing = -1
+    m.shrinking = -1
+    m.shrinkFrom = 0.0
+    m.growsCards = false
+    m.growRoom = 0
 
     m.railTitle.font.size = 30
     m.spec = invalid
@@ -48,6 +57,9 @@ sub setContent(spec as object)
     if isValid(spec.titleSize) then m.railTitle.font.size = spec.titleSize
     m.built = 0
     m.cardHeight = 0
+    m.grow.control = "stop"
+    m.growing = -1
+    m.shrinking = -1
     m.track.removeChildrenIndex(m.track.getChildCount(), 0)
     placeTrack(0)
     m.top.focusedStop = -1
@@ -61,7 +73,6 @@ sub setContent(spec as object)
 
     topOffset = 0
     if hasTitle then topOffset = titleHeight + (spec.titleGap ?? NOUVEAU_RAIL_TITLE_GAP)
-    m.viewport.translation = [0, topOffset + NOUVEAU_FOCUS_CLEARANCE]
 
     startIndex = spec.startIndex ?? 0
     if startIndex < 0 or startIndex >= spec.cards.count() then startIndex = 0
@@ -73,7 +84,13 @@ sub setContent(spec as object)
 
     m.top.stopCount = spec.cards.count() * spec.stopsPerCard
     m.top.entryStop = startIndex * spec.stopsPerCard
-    m.top.railHeight = topOffset + NOUVEAU_FOCUS_CLEARANCE * 2 + m.cardHeight
+    ' A card that grows under focus (Card Focus Expansion, as on Core's TV cards) rises from its
+    ' bottom edge, so the rail keeps that much room over its cards. Cast and review cards don't grow.
+    m.growsCards = get_user_setting_bool("ui.cardFocusExpansion", true) and spec.component <> "NouveauPeopleCard" and spec.component <> "ReviewCard"
+    m.growRoom = 0
+    if m.growsCards then m.growRoom = homeCards.GrowRoom(m.cardHeight)
+    m.viewport.translation = [0, topOffset + NOUVEAU_FOCUS_CLEARANCE + m.growRoom]
+    m.top.railHeight = topOffset + NOUVEAU_FOCUS_CLEARANCE * 2 + m.growRoom + m.cardHeight
     ' Kept at the laid-out height, since cards built later can measure taller than the rail has room for
     m.clipHeight = m.cardHeight
     if startIndex > 0 then placeStart(startIndex)
@@ -85,7 +102,8 @@ end sub
 sub clipViewport()
     overhang = m.spec.focusOverhang ?? 0
     left = overhang
-    m.viewport.clippingRect = [-left, -overhang, m.viewportWidth + left, m.clipHeight + overhang * 2]
+    top = overhang + m.growRoom
+    m.viewport.clippingRect = [-left, -top, m.viewportWidth + left, m.clipHeight + top + overhang]
 end sub
 
 ' The start card opens where focusing it puts it, so the rail doesn't shift on the first press
@@ -189,11 +207,48 @@ function focusStop(stopIndex as integer) as boolean
     applyFocus(stopIndex)
     slideTo(index)
     card.setFocus(true)
+    growCard(index)
     return true
 end function
 
 sub clearFocus()
     applyFocus(-1)
+    growCard(-1)
+end sub
+
+' Starts growing the card at index (-1 grows none) while the one grown before shrinks from wherever
+' it had got to
+sub growCard(index as integer)
+    if not m.growsCards or index = m.growing then return
+    t = m.growDriver.opacity
+    m.grow.control = "stop"
+    if m.shrinking >= 0 and m.shrinking <> index then setCardScale(m.shrinking, 1)
+    if m.growing >= 0
+        m.shrinking = m.growing
+        m.shrinkFrom = t
+    else if m.shrinking = index
+        m.shrinking = -1
+    else if m.shrinking >= 0
+        m.shrinkFrom = m.shrinkFrom * (1 - t)
+    end if
+    m.growing = index
+    m.growDriver.opacity = 0
+    m.grow.control = "start"
+end sub
+
+' Runs every frame of a grow
+sub showGrowth()
+    t = m.growDriver.opacity
+    if m.growing >= 0 then setCardScale(m.growing, 1 + (homeCards.GROW_SCALE - 1) * t)
+    if m.shrinking >= 0 then setCardScale(m.shrinking, 1 + (homeCards.GROW_SCALE - 1) * m.shrinkFrom * (1 - t))
+end sub
+
+' The focused card sits at the rail's left edge, so it grows up and right from its bottom left corner
+sub setCardScale(index as integer, scale as float)
+    card = m.track.getChild(index)
+    if not isValid(card) then return
+    card.scaleRotateCenter = [0, card.cardHeight]
+    card.scale = [scale, scale]
 end sub
 
 ' A card either has two halves to mark or one, and a stop below zero marks none
