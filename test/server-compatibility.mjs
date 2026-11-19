@@ -6,35 +6,20 @@ const readFile = async (...args) => {
 };
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createRequire } from 'node:module';
-import { Writable } from 'node:stream';
 import bsc from 'brighterscript';
-import brs from 'brs';
+import brs from 'brs-node';
+import sceneGraph from 'brs-node/bin/brs-sg.node.js';
 import bslib from '@rokucommunity/bslib';
 
-// brs predates these two Roku string methods; supply their platform semantics.
-const originalGetMethod = brs.types.RoString.prototype.getMethod;
-brs.types.RoString.prototype.getMethod = function (name) {
-    const method = name.toLowerCase();
-    if (method === 'startswith' || method === 'endswith') {
-        return new brs.types.Callable(name, {
-            signature: {
-                args: [new brs.types.StdlibArgument('value', brs.types.ValueKind.String)],
-                returns: brs.types.ValueKind.Boolean,
-            },
-            impl: (_interpreter, value) => brs.types.BrsBoolean.from(
-                method === 'startswith' ? this.getValue().startsWith(value.value) : this.getValue().endsWith(value.value)
-            ),
-        });
-    }
-    return originalGetMethod.call(this, name);
-};
+brs.registerExtension(() => new sceneGraph.BrightScriptExtension());
 
-// brs hands ReplaceAll its replacement untouched, where the device reads \1 as a captured group.
-const originalRegexMethod = brs.types.RoRegex.prototype.getMethod;
-brs.types.RoRegex.prototype.getMethod = function (name) {
-    if (name.toLowerCase() !== 'replaceall') return originalRegexMethod.call(this, name);
-    return new brs.types.Callable(name, {
+// The device reads \1 to \9 in a Replace or ReplaceAll replacement as captured groups and $ as itself.
+// brs-node hands ReplaceAll its replacement untouched and reads every \ in Replace as a $, and its
+// ReplaceAll leaves the regex global, so both run here on a copy of the pattern.
+const deviceReplacement = text => text.replace(/\$/g, '$$$$').replace(/\\([1-9])/g, '$$$1');
+const originalRegisterMethods = brs.types.RoRegex.prototype.registerMethods;
+brs.types.RoRegex.prototype.registerMethods = function (methods) {
+    const replacing = (name, global) => new brs.types.Callable(name, {
         signature: {
             args: [
                 new brs.types.StdlibArgument('str', brs.types.ValueKind.String),
@@ -43,30 +28,19 @@ brs.types.RoRegex.prototype.getMethod = function (name) {
             returns: brs.types.ValueKind.String,
         },
         impl: (_interpreter, str, replacement) => {
-            const global = new RegExp(this.jsRegex.source, this.jsRegex.flags.replace('g', '') + 'g');
-            return new brs.types.BrsString(str.value.replace(global, replacement.value.replace(/\\(\d)/g, '$$$1')));
+            const flags = this.jsRegex.flags.replace('g', '') + (global ? 'g' : '');
+            return new brs.types.BrsString(str.value.replace(new RegExp(this.jsRegex.source, flags), deviceReplacement(replacement.value)));
         },
     });
+    assert.ok(this.replace && this.replaceAll, 'brs-node built roRegex differently, so the Replace stand ins need a look');
+    const stand = new Map([[this.replace, replacing('replace', false)], [this.replaceAll, replacing('replaceAll', true)]]);
+    methods.ifRegex = methods.ifRegex.map(method => stand.get(method) ?? method);
+    return originalRegisterMethods.call(this, methods);
 };
 
-// brs has no UpTime; the device returns seconds since the app started.
-const { Environment } = createRequire(import.meta.url)('brs/lib/interpreter/Environment.js');
-const startedAt = performance.now();
-const upTime = new brs.types.Callable('UpTime', {
-    signature: {
-        args: [new brs.types.StdlibArgument('dummy', brs.types.ValueKind.Int32)],
-        returns: brs.types.ValueKind.Float,
-    },
-    impl: () => new brs.types.Float((performance.now() - startedAt) / 1000),
-});
-const originalDefine = Environment.prototype.define;
-Environment.prototype.define = function (scope, name, value) {
-    originalDefine.call(this, scope, name, value);
-    if (name === '_brs_') originalDefine.call(this, scope, 'UpTime', upTime);
-};
-
-// Execute production functions after BrighterScript transpilation. Only the
-// device registry and authentication context are replaced with deterministic fixtures.
+// Execute production functions after BrighterScript transpilation. Only the server answers, the
+// user registry and the authentication context are replaced with deterministic fixtures; the
+// device registry starts empty on every run.
 const selections = {
     'source/utils/serverCompatibility.bs': null,
     'source/utils/accentFolding.bs': null,
@@ -104,6 +78,7 @@ const selections = {
     'components/details/SpotlightCards.bs': ['spotlightEpisodeSeason', 'spotlightEpisodeOrder', 'spotlightEpisodeFirst', 'spotlightBuilderPersonBackdrops', 'spotlightFirstUnused', 'spotlightBackdropOnlyUrl'],
     'source/utils/playbackFacts.bs': null,
     'source/utils/mediaBadges.bs': null,
+    'source/utils/themeChrome.bs': null,
     'source/utils/librarySorts.bs': null,
     'source/utils/libraryGroupBy.bs': null,
     'source/utils/libraryCard.bs': null,
@@ -271,15 +246,7 @@ for (const name of ['ConnectionRank', 'ServerFromResource', 'Settled', 'MachineI
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/plex-tv.bs', 'utf8');
-// The rest of the guide rules use loops this interpreter cant parse
-const liveTvGuideFile = await readFile('source/utils/liveTvGuide.bs', 'utf8');
-source += '\n' + liveTvGuideFile.match(/^const GUIDE_MINUTE = .+$/m)[0] + '\nnamespace liveTvGuide\n';
-for (const name of ['ParseTime', 'EpisodeTitleOf', 'SeasonEpisodeLabel', 'EpisodeLine', 'HasTimer', 'HasSeriesTimer', 'RecordingMark', 'SeriesChoices', 'SeriesChoiceOf', 'SeriesChoiceFlags', 'IsUpcomingTimer', 'UpcomingTimers', 'TimerFor', 'LiveRecording', 'StartOfDay']) {
-    const match = liveTvGuideFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
-    assert.ok(match, `Missing liveTvGuide.${name}`);
-    source += '\n' + match[0];
-}
-source += '\nend namespace\n';
+source += '\n' + (await readFile('source/utils/liveTvGuide.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/live-tv-guide.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/recordAiring.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/record-airing.bs', 'utf8');
@@ -335,26 +302,16 @@ source += '\n' + await readFile('test/seasonal-effects.bs', 'utf8');
 source += '\n' + await readFile('test/audio-track.bs', 'utf8');
 source += '\n' + await readFile('test/audio-quality.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-selection.bs', 'utf8');
-// The registry reads and writes stay out, since this interpreter has no registry, so nothing is
-// remembered when a screen asks
-const trackMemoryFile = await readFile('source/utils/trackMemory.bs', 'utf8');
-source += '\n' + trackMemoryFile.match(/^const TRACK_MEMORY_\w+ = .+$/gm).join('\n') + '\nnamespace trackMemory\n';
-for (const name of ['Empty', 'WithPick', 'Take', 'Push', 'Pick', 'RememberedAudio', 'RememberedSubtitle', 'SeriesPref', 'MatchSeries', 'NamedTracks', 'OfType', 'Position', 'StreamWithIndex', 'HasIndex', 'StreamIndex', 'TrackLanguage', 'TrackName', 'SaysForced']) {
-    const match = trackMemoryFile.match(new RegExp(`^    (?:function|sub) ${name}\\([^]*?^    end (?:function|sub)`, 'm'));
-    assert.ok(match, `Missing trackMemory.${name}`);
-    source += '\n' + match[0];
-}
-source += '\n    function Load() as object\n        return trackMemory.Empty()\n    end function\nend namespace\n';
+source += '\n' + (await readFile('source/utils/trackMemory.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/track-memory.bs', 'utf8');
-// The PIN decisions without the registry or the server, and with a stand in for the hash, which
-// this interpreter has no digest for
-for (const [file, constants, space, names, extra] of [
-    ['source/utils/pinLockout.bs', /^const PIN_\w+ = .+$/gm, 'pinLockout', ['IsPinShaped', 'Matches', 'RecordRemaining', 'RecordFailure', 'FormatWait', 'TooManyAttempts'], '    function HashPin(pin as string) as string\n        return "#" + pin\n    end function\n'],
-    ['source/api/serverPin.bs', /^const SERVER_PIN_\w+ = .+$/gm, 'serverPin', ['VerifyVerdict', 'WriteVerdict', 'Locked', 'IsBoolean', 'ErrorIs'], ''],
-    ['source/utils/signInPin.bs', /^const SIGN_IN_\w+ = .+$/gm, 'signInPin', ['NoPin', 'RecordFrom', 'IsEnabled', 'Patched', 'Settled', 'VerifyHere', 'AfterStatus', 'AfterVerify', 'Refusal', 'AfterStore', 'Message', 'AccountKey', 'MarkForgotten', 'TakeForgottenUsername', 'NoteProvedSignIn', 'TakeProvedSignIn', 'TakeForgotten'], '']
+// The PIN decisions without the registry or the server
+for (const [file, constants, space, names] of [
+    ['source/utils/pinLockout.bs', /^const PIN_\w+ = .+$/gm, 'pinLockout', ['HashPin', 'IsPinShaped', 'Matches', 'RecordRemaining', 'RecordFailure', 'FormatWait', 'TooManyAttempts']],
+    ['source/api/serverPin.bs', /^const SERVER_PIN_\w+ = .+$/gm, 'serverPin', ['VerifyVerdict', 'WriteVerdict', 'Locked', 'IsBoolean', 'ErrorIs']],
+    ['source/utils/signInPin.bs', /^const SIGN_IN_\w+ = .+$/gm, 'signInPin', ['NoPin', 'RecordFrom', 'IsEnabled', 'Patched', 'Settled', 'VerifyHere', 'AfterStatus', 'AfterVerify', 'Refusal', 'AfterStore', 'Message', 'AccountKey', 'MarkForgotten', 'TakeForgottenUsername', 'NoteProvedSignIn', 'TakeProvedSignIn', 'TakeForgotten']]
 ]) {
     const text = await readFile(file, 'utf8');
-    source += '\n' + text.match(constants).join('\n') + `\nnamespace ${space}\n` + extra;
+    source += '\n' + text.match(constants).join('\n') + `\nnamespace ${space}\n`;
     for (const name of names) {
         const match = text.match(new RegExp(`^    (?:function|sub) ${name}\\([^]*?^    end (?:function|sub)`, 'm'));
         assert.ok(match, `Missing ${space}.${name}`);
@@ -374,16 +331,7 @@ source += '\n' + await readFile('test/person-credits.bs', 'utf8');
 source += '\n' + await readFile('test/spotlight-person.bs', 'utf8');
 source += '\n' + await readFile('test/music-categories.bs', 'utf8');
 source += '\n' + await readFile('test/incomplete-recordings.bs', 'utf8');
-// The rest of the arrangement helpers use loops this interpreter can't parse, and the stand ins in
-// test/detail-sections.bs cover them
-const buttonLayoutFile = await readFile('source/utils/buttonLayout.bs', 'utf8');
-source += '\n' + buttonLayoutFile.match(/^const OSD_\w+ = .+$/gm).join('\n') + '\nnamespace buttonLayout\n' + buttonLayoutFile.match(/^    const OSD_\w+ = .+$/gm).join('\n') + '\n';
-for (const name of ['OsdCandidates', 'OsdSecondaryX', 'Ordered', 'Arrange']) {
-    const match = buttonLayoutFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
-    assert.ok(match, `Missing buttonLayout.${name}`);
-    source += '\n' + match[0];
-}
-source += '\nend namespace\n';
+source += '\n' + (await readFile('source/utils/buttonLayout.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/settings-live-preview.bs', 'utf8');
 const moonfinPluginFile = await readFile('source/api/MoonfinPlugin.bs', 'utf8');
 source += '\nnamespace moonfinPlugin\n';
@@ -395,13 +343,8 @@ for (const name of ['InfoFromPing', 'WithUserToken', 'AreTmdbThumbsAvailable', '
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/tmdb-thumbs.bs', 'utf8');
 source += '\n' + await readFile('test/ratings-scope.bs', 'utf8');
-// The rest of the row layout uses loops this interpreter cant parse, and the outside lists only need these
 const homeRowLayoutFile = await readFile('source/utils/homeRowLayout.bs', 'utf8');
-source += '\nnamespace homeRowLayout\n' + homeRowLayoutFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['Catalogue', 'ExternalCharts', 'OfficialChart', 'DiscoverChart', 'ExternalChart', 'Passthrough', 'AsText', 'Sources', 'SourceFor', 'ServerId', 'ServerKey', 'ServerOf', 'SourceFromId', 'IsOwnServer', 'IsSliderRow', 'RowToggles', 'ReloadsHome']) {
-    source += '\n' + homeRowLayoutFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
-}
-source += '\nend namespace\n';
+source += '\n' + homeRowLayoutFile.replace(/^import .*$/gm, '');
 // The merge sort alone, since the rest of the library scope asks the server
 const libraryScopeFile = await readFile('source/utils/libraryScope.bs', 'utf8');
 source += '\nnamespace libraryScope\n';
@@ -420,8 +363,7 @@ source += '\n' + await readFile('test/seerr-sliders.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/SeerrUtils.bs', 'utf8')).match(/^const SEERR_(?:MEDIA|REQUEST)_\w+ = .+$/gm).join('\n');
 source += '\n' + (await readFile('source/utils/seerrRequestRules.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/seerr-requests.bs', 'utf8');
-// The whole markdown reader uses loops this interpreter cant parse, and the reviews only need Strip
-source += '\nnamespace messageMarkdown\n' + (await readFile('source/utils/messageMarkdown.bs', 'utf8')).match(/^    function Strip\([^]*?^    end function/m)[0] + '\nend namespace\n';
+source += '\n' + (await readFile('source/utils/messageMarkdown.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/tmdb-reviews.bs', 'utf8');
 const achievementsModelFile = await readFile('source/utils/achievementsModel.bs', 'utf8');
 source += '\nnamespace achievementsModel\n';
@@ -461,12 +403,18 @@ try {
     await writeFile(output, code);
     let stdout = '';
     let stderr = '';
-    const capture = callback => new Writable({ write(chunk, encoding, done) { callback(chunk.toString()); done(); } });
-    await brs.execute([output], {
-        root: directory,
-        stdout: capture(text => { stdout += text; }),
-        stderr: capture(text => { stderr += text; }),
-    }).catch(error => { throw new Error(stderr + stdout, { cause: error }); });
+    brs.registerCallback(message => {
+        if (typeof message !== 'string') return;
+        const comma = message.indexOf(',');
+        const [kind, text] = [message.slice(0, comma), message.slice(comma + 1)];
+        if (kind === 'print') stdout += text;
+        else if (kind === 'warning' || kind === 'error') stderr += text;
+    });
+    // Times in the tests are UTC, as on a device set to it
+    const device = { ...brs.DefaultDeviceInfo, timeZone: 'UTC', timeZoneIANA: 'UTC', timeZoneAuto: false, timeZoneOffset: 0 };
+    const payload = await brs.createPayloadFromFiles([path.basename(output)], device, new Map(), directory);
+    const result = await brs.executeFile(payload).catch(error => { throw new Error(stderr + stdout, { cause: error }); });
+    assert.equal(result.exitReason, brs.AppExitReason.UserNav, stderr + stdout);
     assert.equal(stderr, '', stderr);
     assert.doesNotMatch(stdout, /FAIL:/, stdout);
     assert.match(stdout, /PASS: server compatibility/, stdout);
@@ -591,11 +539,9 @@ for await (const file of glob('{components,source}/**/*.{bs,xml}')) {
 }
 assert.ok(scannedRoutes > 100, 'The route scan found the app sources');
 
-// The device lowercases a bare key in a literal, which the player API turns away, and brs doesnt.
+// The device lowercases a bare key in a literal, which the player API turns away, and brs-node doesnt.
 const youtubeSource = await readFile('source/utils/youtubeTrailer.bs', 'utf8');
 assert.ok(['"videoId":', '"clientName":', '"clientVersion":', '"contentCheckOk":', '"racyCheckOk":', '["visitorData"]'].every(key => youtubeSource.includes(key)), 'The YouTube request keeps its camelCase keys');
-// brs has no roEVPDigest, so the SponsorBlock lookup is pinned here instead of run.
-assert.match(youtubeSource.match(/function SponsorRequestUrl[^]*?end function/)[0], /digest\.Setup\("sha256"\)[^]*SPONSOR_URL \+ "\/" \+ LCase\(Left\(digest\.Process\(bytes\), 4\)\) \+ "\?categories="/, 'SponsorBlock is asked by hash prefix, not by video ID');
 
 const seerrTask = await readFile('components/seerr/SeerrAPITask.bs', 'utf8');
 assert.match(seerrTask, /url = buildServerURL\(serverUrl, targetPath, queryParams\)/, 'Plugin proxy preserves saved server query through shared compositor');
