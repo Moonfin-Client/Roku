@@ -3,6 +3,7 @@
 ' the next launch asks for all of them at once as Main starts, while the scene is still being built.
 ' getJson and ServerInfo then take an answer that is already in, or wait for the one on its way.
 ' A request nobody takes is dropped. Only the main thread records and takes, since that's where sign in runs.
+' On Silo the same goes for the calls silo.Call makes (NoteSilo, TakeSilo).
 '
 ' The state lives in the main thread's m.startupPrefetch with Note and Take on it, and callers reach
 ' it through startupPrefetchAnswer (misc.bs). Nothing imports this file, so the components that
@@ -12,6 +13,9 @@ namespace startupPrefetch
     const MAX_URLS = 16
     ' An answer older than this is not used, so a launch that sat on a sign in screen asks again
     const MAX_AGE_MS = 20000
+    ' Silo calls in flight at once. Each new HTTPS connection costs the device a TLS handshake while
+    ' it is busy building the scene, so a dozen at once made the first answer later than one alone
+    const SILO_IN_FLIGHT = 4
 
     ' One file per server and user, so another account's requests are never sent with this one's token.
     ' The name is shortened, so the file also names its account in full (owner).
@@ -21,23 +25,31 @@ namespace startupPrefetch
 
     ' Starts the remembered requests and begins recording this launch's. Called by Main as it starts.
     sub Start()
-        state = { recording: true, urls: [], inflight: {}, startedAt: Int(UpTime(0) * 1000), token: "" }
+        state = { recording: true, urls: [], siloCalls: [], siloQueue: [], inflight: {}, sentHeaders: {}, startedAt: Int(UpTime(0) * 1000), token: "" }
         state.Note = startupPrefetch.Note
         state.Take = startupPrefetch.Take
+        state.NoteSilo = startupPrefetch.NoteSilo
+        state.TakeSilo = startupPrefetch.TakeSilo
         m.startupPrefetch = state
         serverUrl = get_url()
         userId = getActiveUserIdFromRegistry()
         if serverUrl = invalid or not isValidAndNotEmpty(userId) then return
-        ' Silo and Plex answer through their own bridges, which getJson asks before any request goes out
+        ' Plex answers through its own bridge, which getJson asks before any request goes out. Silo's
+        ' bridge makes its calls through silo.Call, which asks here
         serverType = serverTypeOf(serverUrl)
-        if serverType <> "jellyfin" and serverType <> "emby" then return
+        if serverType <> "jellyfin" and serverType <> "emby" and serverType <> "silo" then return
         state.file = startupPrefetch.FilePath(serverUrl, userId)
 
         ' A first launch or a reboot has none yet, and reading a missing file logs an error
         if not CreateObject("roFileSystem").Exists(state.file) then return
         saved = ParseJson(ReadAsciiFile(state.file))
-        if type(saved) <> "roAssociativeArray" or type(saved.urls) <> "roArray" then return
+        if type(saved) <> "roAssociativeArray" then return
         if not isString(saved.owner) or saved.owner <> homeCache.Owner(serverUrl, userId) then return
+        if serverType = "silo"
+            startupPrefetch.StartSilo(state, saved.siloCalls, silo.ServerKey(serverUrl))
+            return
+        end if
+        if type(saved.urls) <> "roArray" then return
         ' Sign in names the device after the user, so the requests go out under the same DeviceId as
         ' the ones after them, never as a second device holding the same token
         if not isValidAndNotEmpty(saved.deviceId) or not isString(saved.deviceId) then return
@@ -61,6 +73,66 @@ namespace startupPrefetch
         end for
     end sub
 
+    ' Queues the Silo calls sign in made last time, each with the headers silo.Call would send it now,
+    ' and sends the first few. The saved calls name the login and profile they acted for, never a
+    ' token, and only calls to this server go out
+    sub StartSilo(state as object, calls as dynamic, base as string)
+        if type(calls) <> "roArray" then return
+        for each call in calls
+            if type(call) = "roAssociativeArray" and call.server = base and isString(call.url) and isString(call.account) and isString(call.profile)
+                tokens = invalid
+                if call.account <> "" then tokens = silo.LoadTokens(base, call.account)
+                ' A login due a refresh refreshes before its first call, which then goes out with new headers
+                ' A profile whose PIN is asked every time is never acted as before its PIN is entered
+                if (call.account = "" or (isValid(tokens) and not silo.NeedsRefresh(tokens))) and (call.profile = "" or silo.RemembersPin(call.profile))
+                    headers = silo.RequestHeaders(tokens, call.profile, call.useProfile = true, invalid)
+                    ' Sign in names the device after the user, so a call goes out under the DeviceId it had
+                    if isString(call.device) and call.device <> "" and headers.DoesExist("X-Silo-Device-Id") then headers["X-Silo-Device-Id"] = call.device
+                    state.siloQueue.push(call.url)
+                    state.sentHeaders[call.url] = headers
+                end if
+            end if
+        end for
+        ' A write clears what was read before it, so answers sent before a write aren't taken after it
+        state.siloGeneration = silo.MemoGeneration()
+        startupPrefetch.SendSilo(state)
+    end sub
+
+    ' Sends queued Silo calls until SILO_IN_FLIGHT are still on their way. An answer that is in but
+    ' not taken yet doesn't hold a place
+    sub SendSilo(state as object)
+        running = 0
+        for each url in state.inflight
+            if state.inflight[url].GetMessagePort().PeekMessage() = invalid then running++
+        end for
+        while running < startupPrefetch.SILO_IN_FLIGHT and state.siloQueue.Count() > 0
+            url = state.siloQueue.Shift()
+            headers = state.sentHeaders[url]
+            req = CreateObject("roUrlTransfer")
+            req.SetUrl(url)
+            if LCase(url).Left(8) = "https://" then req.SetCertificatesFile("common:/certs/ca-bundle.crt")
+            req.AddHeader("Accept", "application/json, application/problem+json")
+            for each name in headers
+                req.AddHeader(name, headers[name])
+            end for
+            req.SetMessagePort(CreateObject("roMessagePort"))
+            if req.AsyncGetToString()
+                state.inflight[url] = req
+                running++
+            end if
+        end while
+    end sub
+
+    ' Notes a Silo GET the main thread made, while this launch is still recording. Called on the state.
+    sub NoteSilo(base as string, url as string, account as string, profile as string, useProfile as boolean, headers as object)
+        if m.recording <> true then return
+        if m.siloCalls.count() >= startupPrefetch.MAX_URLS then return
+        for each known in m.siloCalls
+            if known.url = url then return
+        end for
+        m.siloCalls.push({ server: base, url: url, account: account, profile: profile, useProfile: useProfile, device: headers["X-Silo-Device-Id"] ?? "" })
+    end sub
+
     ' Notes a GET the main thread made, while this launch is still recording. Called on the state.
     sub Note(url as string)
         if m.recording <> true then return
@@ -81,13 +153,14 @@ namespace startupPrefetch
             state.inflight[url].AsyncCancel()
         end for
         state.inflight = {}
+        state.siloQueue = []
         ' A sign in that changed server or user saves under the new one
         serverUrl = get_url()
         userId = getActiveUserIdFromRegistry()
         if serverUrl = invalid or not isValidAndNotEmpty(userId) then return
         files = CreateObject("roFileSystem")
         if not files.Exists(startupPrefetch.ROOT) then CreateDirectory(startupPrefetch.ROOT)
-        saved = { urls: state.urls, deviceId: getAuthHeaderContext().deviceId, owner: homeCache.Owner(serverUrl, userId) }
+        saved = { urls: state.urls, siloCalls: state.siloCalls, deviceId: getAuthHeaderContext().deviceId, owner: homeCache.Owner(serverUrl, userId) }
         WriteAsciiFile(startupPrefetch.FilePath(serverUrl, userId), FormatJson(saved))
     end sub
 
@@ -102,15 +175,59 @@ namespace startupPrefetch
             req.AsyncCancel()
             return invalid
         end if
-        event = wait(15000, req.GetMessagePort())
-        if type(event) <> "roUrlEvent"
-            ' The server isn't answering, so the rest are dropped too: each caller then waits only
-            ' for its own request, rather than for its prefetch first
-            req.AsyncCancel()
+        return startupPrefetch.Await(m, req)
+    end function
+
+    ' Take for a Silo call: the answer only counts if its request went out with the same headers
+    ' (token, profile and its PIN proof, device) the call has now. Called on the state.
+    function TakeSilo(url as string, headers as object, timeoutMs as integer) as dynamic
+        req = m.inflight[url]
+        ' One not sent yet is made by the caller, and the next queued ones go out in its place
+        queued = []
+        for each other in m.siloQueue
+            if other <> url then queued.push(other)
+        end for
+        m.siloQueue = queued
+        ' Once the prefetch is too old or the Silo memo has moved on, no answer of it can be used, so
+        ' nothing more is sent and what's still out is canceled
+        if Int(UpTime(0) * 1000) - m.startedAt > startupPrefetch.MAX_AGE_MS or silo.MemoGeneration() <> m.siloGeneration
             for each other in m.inflight
                 m.inflight[other].AsyncCancel()
             end for
             m.inflight = {}
+            m.siloQueue = []
+            return invalid
+        end if
+        ' The taken call holds its place until its answer is in, so no more than SILO_IN_FLIGHT are out
+        startupPrefetch.SendSilo(m)
+        m.inflight.Delete(url)
+        if not isValid(req) then return invalid
+        sent = m.sentHeaders[url]
+        same = type(sent) = "roAssociativeArray" and sent.Count() = headers.Count()
+        if same
+            for each name in headers
+                if not sent.DoesExist(name) or sent[name] <> headers[name] then same = false
+            end for
+        end if
+        if not same
+            req.AsyncCancel()
+            return invalid
+        end if
+        return startupPrefetch.Await(m, req, timeoutMs)
+    end function
+
+    ' Waits for a prefetched request's answer: its roUrlEvent when it is a 2xx, else invalid
+    function Await(state as object, req as object, timeoutMs = 15000 as integer) as dynamic
+        event = wait(timeoutMs, req.GetMessagePort())
+        if type(event) <> "roUrlEvent"
+            ' The server isn't answering, so the rest are dropped too: each caller then waits only
+            ' for its own request, rather than for its prefetch first
+            req.AsyncCancel()
+            for each other in state.inflight
+                state.inflight[other].AsyncCancel()
+            end for
+            state.inflight = {}
+            state.siloQueue = []
             return invalid
         end if
         if event.GetInt() <> 1 then return invalid
