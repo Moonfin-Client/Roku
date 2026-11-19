@@ -5334,5 +5334,17 @@
         <source>Server Recommends</source>
         <translation>Servidor Recomenda</translation>
     </message>
+    <message>
+        <source>Show Description on Pause</source>
+        <translation>Mostrar descrição em pausa</translation>
+    </message>
+    <message>
+        <source>Dim video and show overview text while paused</source>
+        <translation>Escurecer o vídeo e mostrar a sinopse durante a pausa</translation>
+    </message>
+    <message>
+        <source>Hide Unwatched Count</source>
+        <translation>Ocultar contagem de conteúdo não visto</translation>
+    </message>
 </context>
 </TS>

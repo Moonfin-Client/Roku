@@ -63,7 +63,7 @@ sub setColors()
 
     ' Every read of the session copies all of it, and a row binds its cards as it scrolls, so the
     ' colors come from one read
-    colors = chainLookupReturn(m.global.session, "user.settings", {})
+    colors = chainLookupReturn(sessionNow(), "user.settings", {})
     if isValid(m.itemProgress) then m.itemProgress.blendColor = colors.colorHomeRowItemProgress ?? ColorPalette.TRIADBLUE
     if isValid(m.itemProgressBackground) then m.itemProgressBackground.blendColor = colors.colorHomeRowItemProgressBackground ?? ColorPalette.BLACK90
     m.cardBackground = colors.colorHomeRowItemBackground ?? ColorPalette.ELEMENTBACKGROUND
@@ -166,6 +166,8 @@ sub itemContentChanged()
         if isValid(m.scaleGroup) then m.scaleGroup.translation = [0, 0]
     end if
 
+    setupPosterLabelsObserver(itemData)
+
     ' Every read of the json field copies it, so it is read once
     json = itemData.json
     if isValid(m.playedIndicator)
@@ -220,13 +222,13 @@ sub itemContentChanged()
     m.posterMask.visible = true
 
     m.outsideCard = isValid(json) and (isValid(json.SeerrTmdbId) or isValid(json.CalendarDate))
-    ' Every card's art is scaled to the pixels the screen draws it at as it loads. Servers send it
-    ' larger (Silo's narrowest poster is 300 wide, TMDB's and a library's own art far more), and a
-    ' Roku with little texture memory drops what it holds and decodes it again on the way back, or
-    ' leaves a 2500 pixel PNG out and shows the name instead
-    if not isValid(m.screenScale) then m.screenScale = CreateObject("roDeviceInfo").GetUIResolution().width / 1920
-    m.itemPoster.loadWidth = Int(width * m.screenScale + 0.5)
-    m.itemPoster.loadHeight = Int(m.itemPoster.height * m.screenScale + 0.5)
+    ' Every card's art is decoded at the card's size as it loads. Servers can send it far larger (Silo's
+    ' narrowest poster is 300 wide, TMDB's and a library's own art far more), and a Roku with little
+    ' texture memory drops what it holds and decodes it again on the way back, or leaves a 2500 pixel
+    ' PNG out and shows the name instead. An HD Roku draws the card smaller than its layout size, and
+    ' decoding at its own pixels left posters soft: its scaler is better at drawing than at decoding.
+    m.itemPoster.loadWidth = Int(width)
+    m.itemPoster.loadHeight = Int(m.itemPoster.height)
 
     ' A Seerr title can carry its status on the poster. It rides on the poster so it fades with it,
     ' and the marks along the top edge drop below it.
@@ -533,7 +535,7 @@ sub displayBrowseTileInfo(itemData as object, background = BROWSE_TILE_BACKGROUN
     m.itemPoster.translation = [BROWSE_TILE_INSET, BROWSE_TILE_INSET]
     m.itemPoster.uri = itemData.posterURL
     m.posterMask.maskUri = ""
-    m.posterMask.maskSize = [0, 0]
+    m.posterMask.size = [0, 0]
     m.backdrop.color = background
     m.backdrop.visible = true
 end sub
@@ -682,7 +684,14 @@ end sub
 
 sub setCardArt(uri as dynamic)
     m.artSource = uri
-    m.itemPoster.uri = homeCards.SizedImageUrl(uri, Int(m.itemPoster.width), Int(m.itemPoster.height))
+    ' Asked for at the size it is decoded at
+    width = m.itemPoster.loadWidth
+    height = m.itemPoster.loadHeight
+    if width <= 0 or height <= 0
+        width = Int(m.itemPoster.width)
+        height = Int(m.itemPoster.height)
+    end if
+    m.itemPoster.uri = homeCards.SizedImageUrl(uri, width, height)
 end sub
 
 sub displayVideoInfo(itemData as object)
@@ -918,6 +927,25 @@ sub setupModernShiftObserver(itemData as object)
     if isValid(m.scaleGroup) then m.scaleGroup.translation = [shift, 0]
 end sub
 
+' A row's batched label request can finish after the card has drawn, so the card watches its content
+' node's posterLabels and draws them when they land. Only a new node is observed, since this runs on
+' every layout pass.
+sub setupPosterLabelsObserver(itemData as object)
+    if isValid(m.labelsObservedNode)
+        if m.labelsObservedNode.isSameNode(itemData) then return
+        m.labelsObservedNode.unobserveFieldScoped("posterLabels")
+        m.labelsObservedNode = invalid
+    end if
+    if not itemData.hasField("posterLabels") then return
+    itemData.observeFieldScoped("posterLabels", "onPosterLabelsChanged")
+    m.labelsObservedNode = itemData
+end sub
+
+sub onPosterLabelsChanged()
+    if not isValid(m.top.itemContent) then return
+    showPosterLabels(m.top.itemContent.LookupCI("posterLabels"))
+end sub
+
 sub onModernShiftChanged()
     itemData = m.top.itemContent
     if not isValid(itemData) or not isValid(m.scaleGroup) then return
@@ -1047,7 +1075,7 @@ sub onPosterLoadStatusChanged()
         if posterW = posterH then mask = "pkg:/images/posterSquareMask.webp"
         if posterW > posterH * 3 then mask = "pkg:/images/posterBannerMask.webp"
         m.posterMask.maskUri = mask
-        m.posterMask.maskSize = [posterW, posterH]
+        m.posterMask.size = [posterW, posterH]
     else
         ' Still loading, or out of fallbacks, so the name stands in for the artwork
         m.backdrop.visible = true

@@ -2271,7 +2271,7 @@
     </message>
     <message>
         <source>Since you watched %1</source>
-        <translation>Depuis que vous avez regardé %1</translation>
+        <translation>Similaire à %1</translation>
     </message>
     <message>
         <source>24-Hour Clock</source>
@@ -6111,7 +6111,7 @@
     </message>
     <message>
         <source>Choose how many Since You Watched rows to display (1-5)</source>
-        <translation>Choisissez le nombre de rangées «&#xa0;Depuis votre dernier visionnage&#xa0;» à afficher (1-5)</translation>
+        <translation>Choisissez le nombre de rangées « Selon vos visionnages » à afficher (1-5)</translation>
     </message>
     <message>
         <source>Choose sorting method for completed items</source>
@@ -6267,7 +6267,7 @@
     </message>
     <message>
         <source>SINCE YOU WATCHED</source>
-        <translation>DEPUIS VOTRE DERNIER VISIONNAGE</translation>
+        <translation>SELON VOS VISIONNAGES</translation>
     </message>
     <message>
         <source>STUDIOS</source>
@@ -8524,6 +8524,30 @@
     <message>
         <source>Server Recommends</source>
         <translation>Recommandé par le serveur</translation>
+    </message>
+    <message>
+        <source>Show Description on Pause</source>
+        <translation>Afficher la description en pause</translation>
+    </message>
+    <message>
+        <source>Dim video and show overview text while paused</source>
+        <translation>Assombrir la vidéo et afficher le résumé pendant la pause</translation>
+    </message>
+    <message>
+        <source>Hide Watch Progress</source>
+        <translation>Masquer la progression de lecture</translation>
+    </message>
+    <message>
+        <source>Hide the progress bar on posters you&apos;ve started watching.</source>
+        <translation>Masque la barre de progression sur les affiches des titres déjà commencés.</translation>
+    </message>
+    <message>
+        <source>Hide Unwatched Count</source>
+        <translation>Masquer le compteur d&apos;inédits</translation>
+    </message>
+    <message>
+        <source>Hide the badge showing how many episodes are left to watch.</source>
+        <translation>Masque le compteur indiquant combien d&apos;épisodes restent à voir.</translation>
     </message>
 </context>
 </TS>

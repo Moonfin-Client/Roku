@@ -21,6 +21,15 @@ namespace silo
         return silo.Call(r.server, path, { account: r.account, profileId: r.profileId, query: silo.ArtworkWidths(query) })
     end function
 
+    ' Several catalog reads at once, each { path, query }, answered in the order asked
+    function ApiGetMany(r as object, requests as object) as object
+        calls = []
+        for each request in requests
+            calls.Push({ path: request.path, query: silo.ArtworkWidths(request.query) })
+        end for
+        return silo.CallMany(r.server, calls, { account: r.account, profileId: r.profileId })
+    end function
+
     ' A request that sizes its artwork asks Silo for each kind at the width this Roku's screen draws
     ' it, and Silo sends the narrowest size it keeps at least that wide. The widths are the largest a
     ' layout 1920 wide draws (a Grandparents poster card is 267), scaled to the screen: two thirds
@@ -285,11 +294,12 @@ namespace silo
         return silo.Slice(items, start, limit)
     end function
 
-    ' A few random titles: whole pages picked at random from the first hundred's count, then shuffled
+    ' A few random titles: whole pages picked at random from the first hundred's count, then shuffled.
+    ' Only the titles kept are mapped, since mapping costs far more than reading a page
     function ShuffledPage(r as object, params as object, limit as integer, k as object, libraryId as string) as dynamic
-        first = silo.CatalogPage(r, params, 0, silo.RANDOM_POOL, k, libraryId)
-        if first = invalid then return invalid
-        pageCount = Int((first.TotalRecordCount + silo.RANDOM_POOL - 1) / silo.RANDOM_POOL)
+        first = silo.ReadPage(r, silo.CATALOG, params, 0, silo.RANDOM_POOL)
+        if not first.ok then return invalid
+        pageCount = Int((first.total + silo.RANDOM_POOL - 1) / silo.RANDOM_POOL)
         wanted = limit
         if wanted <= 0 then wanted = silo.RANDOM_POOL
         picks = Int((wanted + 4) / 5)
@@ -300,23 +310,29 @@ namespace silo
             order.Push(p)
         end for
         order = silo.Shuffled(order)
-        items = []
+        raw = []
         taken = 0
         for each p in order
             if taken >= picks then exit for
             if p = 0
-                items.Append(first.Items)
+                raw.Append(first.items)
             else
-                more = silo.CatalogPage(r, params, p * silo.RANDOM_POOL, silo.RANDOM_POOL, k, libraryId)
-                if more <> invalid then items.Append(more.Items)
+                more = silo.ReadPage(r, silo.CATALOG, params, p * silo.RANDOM_POOL, silo.RANDOM_POOL)
+                if more.ok then raw.Append(more.items)
             end if
             taken++
         end for
-        if taken = 0 then items.Append(first.Items)
-        items = silo.Shuffled(items)
-        result = silo.Slice(items, 0, wanted)
-        result["TotalRecordCount"] = first.TotalRecordCount
-        return result
+        if taken = 0 then raw.Append(first.items)
+        raw = silo.Shuffled(raw)
+        ' Titles of a type left out here don't count, so mapping goes on until enough are kept
+        items = []
+        mapped = 0
+        while items.Count() < wanted and mapped < raw.Count()
+            chunk = silo.Slice(raw, mapped, wanted - items.Count()).Items
+            mapped += chunk.Count()
+            items.Append(silo.MapPage(r, chunk, k, libraryId))
+        end while
+        return { Items: items, TotalRecordCount: first.total, StartIndex: 0 }
     end function
 
     ' Shows by last played: Silo has no watch date for a show, so its watch history gives the order
@@ -447,6 +463,40 @@ namespace silo
             raw = silo.ItemsOf(answer.data)
             silo.KeepAnswer("siloEpisodeLists", seasonId, raw, 32)
         end if
+        return silo.MapEpisodes(r, raw, series)
+    end function
+
+    ' Every season's episodes in season order. Silo lists them a season at a time, so the seasons
+    ' are read four at a time, as Core does, rather than one after another. A season that doesn't
+    ' read is left out.
+    function AllSeasonEpisodes(r as object, seasons as object, series as object) as object
+        lists = []
+        requests = []
+        waiting = []
+        for each season in seasons
+            raw = silo.RecallAnswer("siloEpisodeLists", season.Id, 10)
+            if raw = invalid
+                requests.Push({ path: silo.CATALOG + "/items/" + season.Id.EncodeUriComponent() + "/episodes", query: { image_size: silo.LIST_IMAGE_SIZE } })
+                waiting.Push(lists.Count())
+            end if
+            lists.Push(raw)
+        end for
+        answers = silo.ApiGetMany(r, requests)
+        for i = 0 to answers.Count() - 1
+            if answers[i].ok
+                index = waiting[i]
+                lists[index] = silo.ItemsOf(answers[i].data)
+                silo.KeepAnswer("siloEpisodeLists", seasons[index].Id, lists[index], 32)
+            end if
+        end for
+        episodes = []
+        for each raw in lists
+            if raw <> invalid then episodes.Append(silo.MapEpisodes(r, raw, series))
+        end for
+        return episodes
+    end function
+
+    function MapEpisodes(r as object, raw as object, series as object) as object
         episodes = []
         for each episode in raw
             item = silo.MapRaw(r, episode, { type: "episode", series: series })
@@ -474,10 +524,7 @@ namespace silo
         else
             seasons = silo.SeasonsOf(r, owner)
             if seasons = invalid then return invalid
-            for each season in seasons.Items
-                found = silo.SeasonEpisodes(r, season.Id, series)
-                if found <> invalid then episodes.Append(found)
-            end for
+            episodes = silo.AllSeasonEpisodes(r, seasons.Items, series)
         end if
         return { Items: episodes, TotalRecordCount: episodes.Count(), StartIndex: 0 }
     end function

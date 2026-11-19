@@ -6735,5 +6735,17 @@
         <source>Server Recommends</source>
         <translation>Recomendações do servidor</translation>
     </message>
+    <message>
+        <source>Show Description on Pause</source>
+        <translation>Mostrar descrição em pausa</translation>
+    </message>
+    <message>
+        <source>Dim video and show overview text while paused</source>
+        <translation>Escureça o vídeo e mostre o texto de visão geral durante a pausa</translation>
+    </message>
+    <message>
+        <source>Hide Unwatched Count</source>
+        <translation>Ocultar contagem de não assistidos</translation>
+    </message>
 </context>
 </TS>

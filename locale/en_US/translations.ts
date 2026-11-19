@@ -5144,6 +5144,16 @@
         <translation>Mark where each chapter starts on the seek bar</translation>
     </message>
     <message>
+        <source>Show Description on Pause</source>
+        <extracomment>Setting that shows the title and overview over the paused video</extracomment>
+        <translation>Show Description on Pause</translation>
+    </message>
+    <message>
+        <source>Dim video and show overview text while paused</source>
+        <extracomment>Description of the Show Description on Pause setting</extracomment>
+        <translation>Dim video and show overview text while paused</translation>
+    </message>
+    <message>
         <source>Subtitle Customization</source>
         <extracomment>Heading over the subtitle style settings</extracomment>
         <translation>Subtitle Customization</translation>
@@ -8312,6 +8322,26 @@
         <translation>Show each item&apos;s title and details below its artwork in library grids.</translation>
     </message>
     <message>
+        <source>Hide Watch Progress</source>
+        <extracomment>Libraries Setting - Setting title</extracomment>
+        <translation>Hide Watch Progress</translation>
+    </message>
+    <message>
+        <source>Hide the progress bar on posters you&apos;ve started watching.</source>
+        <extracomment>Libraries Setting - Setting description</extracomment>
+        <translation>Hide the progress bar on posters you&apos;ve started watching.</translation>
+    </message>
+    <message>
+        <source>Hide Unwatched Count</source>
+        <extracomment>Libraries Setting - Setting title</extracomment>
+        <translation>Hide Unwatched Count</translation>
+    </message>
+    <message>
+        <source>Hide the badge showing how many episodes are left to watch.</source>
+        <extracomment>Libraries Setting - Setting description</extracomment>
+        <translation>Hide the badge showing how many episodes are left to watch.</translation>
+    </message>
+    <message>
         <source>Length</source>
         <extracomment>Sort By choice for songs and music, the same as Runtime</extracomment>
         <translation>Length</translation>
@@ -9866,7 +9896,7 @@
     </message>
     <message>
         <source>Paused</source>
-        <extracomment>After Hours - Title of the pause menu</extracomment>
+        <extracomment>After Hours - Title of the pause menu. Also shown in capitals over the description of a paused video.</extracomment>
         <translation>Paused</translation>
     </message>
     <message>
