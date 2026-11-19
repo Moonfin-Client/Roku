@@ -1583,7 +1583,10 @@ assert.match(classicHomeXml, /<Group id="detailsSection" translation="\[111, 120
 const overviewTop = Number(classicHomeSource.match(/const OVERVIEW_TOP = (\d+)/)[1]);
 const overviewLine = Number(classicHomeSource.match(/const OVERVIEW_LINE_HEIGHT = (\d+)/)[1]);
 assert.equal(120 + overviewTop + 3 * overviewLine, 440, 'Three overview lines end above the rows');
-assert.match(classicHomeSource, /m\.homeRows\.translation = m\.homeRowInfoOverlay \? \[111, 450\] : \[111, 170\]/, 'The rows stay at 450 under the info area, and sit higher without it');
+assert.match(classicHomeSource, /m\.homeRows\.translation = \[homeRowsLeft\(\), m\.homeRowInfoOverlay \? 450 : 170\]/, 'The rows stay at 450 under the info area, and sit higher without it');
+// Growing classic cards keep a margin left of the focused card inside the list, so the list moves
+// left by it and the cards stay at 111
+assert.match(classicHomeSource, /if m\.homeRows\.growsCards then return 111 - homeCards\.GROW_MARGIN\n    return 111/, 'The rows start left of the cards by the growth margin');
 assert.match(classicHomeSource, /m\.detailsSection\.visible = m\.homeRowInfoOverlay/, 'The info area shows only while Home Row Info Overlay is on');
 assert.match(await readFile('source/utils/misc.bs', 'utf8'), /function showsHomeRowInfoOverlay\(\) as boolean\s+if isModernHomeRows\(\) then return false\s+return get_user_setting_bool\("ui\.home\.rowInfoOverlay", true\)/, 'Only Classic rows show the info area, and it is on until turned off');
 assert.match(await readFile('settings/settings.json', 'utf8'), /"title": "Home Row Info Overlay",\s+"description": "Show title and metadata when browsing home rows",\s+"settingName": "ui\.home\.rowInfoOverlay",\s+"glyph": "info_outline",\s+"requires": "setting:ui\.home\.rowsStyle=v1",\s+"type": "bool",\s+"default": "true"/, 'Home Row Info Overlay is offered with Classic rows and starts on, as in Core');
@@ -1680,7 +1683,7 @@ const addRail = (await readFile('components/details/NouveauItemDetails.bs', 'utf
 assert.match(addRail, /m\.railPool\.DoesExist\(signature\)[^]*?callFunc\("clearFocus"\)/, 'A reused rail comes over with no card lit');
 assert.match(addRail, /callFunc\("clearFocus"\)\s+node\.callFunc\("resetPlacement"\)/, 'A reused rail goes back to where it opened, not where it was last scrolled');
 const nouveauRail = await readFile('components/details/nouveau/NouveauRail.bs', 'utf8');
-assert.match(nouveauRail, /sub resetPlacement\(\)\s+m\.track\.translation = \[0, 0\]\s+if m\.startIndex > 0 then placeStart\(m\.startIndex\)/, 'Resetting a rail puts its track back at its start card');
+assert.match(nouveauRail, /sub resetPlacement\(\)\s+placeTrack\(0\)\s+if m\.startIndex > 0 then placeStart\(m\.startIndex\)/, 'Resetting a rail puts its track back at its start card');
 assert.match(addRail, /if signature <> "" then signature = kind \+ railLook\(\) \+ signature/, 'A spec that cannot be written out is never matched to another rail, and a rail drawn under other theme or Seerr badge settings is built again');
 assert.match(await readFile('components/details/StageItemDetails.bs', 'utf8'), /cards\.push\(\{ title: item\.title, sdPosterUrl: item\.sdPosterUrl/, "Stage's Seerr cards carry the title's values, not its node, so a rebuild can reuse their rail");
 assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "frost"\)[^]*?minimalistRules\.Draws\(itemType\) then return "FrostItemDetails"\s+return "ModernItemDetails"/, 'Frost draws the video and collection pages and hands the rest to Modern');
