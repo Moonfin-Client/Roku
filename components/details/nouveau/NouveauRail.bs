@@ -1,3 +1,4 @@
+import "pkg:/source/utils/homeCards.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/nouveauLayout.bs"
 import "pkg:/source/utils/themeApply.bs"
@@ -17,8 +18,6 @@ const NOUVEAU_RAIL_TITLE_HEIGHT = 38
 const NOUVEAU_RAIL_TITLE_GAP = 20
 ' Room kept above and below the cards, so a rail sits clear of its neighbours
 const NOUVEAU_FOCUS_CLEARANCE = 20
-' How much of a card is kept clear of the edge once focus reaches it
-const NOUVEAU_SCROLL_CLEARANCE = 50
 
 const NOUVEAU_CARD_WINDOW = 10
 const NOUVEAU_CARD_WINDOW_STEP = 8
@@ -28,6 +27,20 @@ sub init()
     m.railTitle = m.top.findNode("railTitle")
     m.viewport = m.top.findNode("viewport")
     m.track = m.top.findNode("track")
+    m.glide = m.top.findNode("glide")
+    m.glideInterp = m.top.findNode("glideInterp")
+    m.growDriver = m.top.findNode("growDriver")
+    m.grow = m.top.findNode("grow")
+    m.growDriver.observeField("opacity", "showGrowth")
+    m.growing = -1
+    m.shrinking = -1
+    m.shrinkFrom = 0.0
+    m.growFrom = 0.0
+    m.growsCards = false
+    m.growRoom = 0
+    m.cardStride = 0
+    ' The built cards by index, since the focused one is moved to the end of the track to draw on top
+    m.cards = []
 
     m.railTitle.font.size = 30
     m.spec = invalid
@@ -48,8 +61,12 @@ sub setContent(spec as object)
     if isValid(spec.titleSize) then m.railTitle.font.size = spec.titleSize
     m.built = 0
     m.cardHeight = 0
+    m.grow.control = "stop"
+    m.growing = -1
+    m.shrinking = -1
     m.track.removeChildrenIndex(m.track.getChildCount(), 0)
-    m.track.translation = [0, 0]
+    m.cards = []
+    placeTrack(0)
     m.top.focusedStop = -1
 
     hasTitle = isValidAndNotEmpty(spec.title)
@@ -61,47 +78,60 @@ sub setContent(spec as object)
 
     topOffset = 0
     if hasTitle then topOffset = titleHeight + (spec.titleGap ?? NOUVEAU_RAIL_TITLE_GAP)
-    m.viewport.translation = [0, topOffset + NOUVEAU_FOCUS_CLEARANCE]
 
     startIndex = spec.startIndex ?? 0
     if startIndex < 0 or startIndex >= spec.cards.count() then startIndex = 0
     m.startIndex = startIndex
+    ' A card that grows under focus (Card Focus Expansion, as on Core's TV cards) rises from its
+    ' bottom left corner and draws over the next card, and the rail keeps that much room over its
+    ' cards. Cast and review cards don't grow.
+    m.growsCards = get_user_setting_bool("ui.cardFocusExpansion", true) and spec.component <> "NouveauPeopleCard" and spec.component <> "ReviewCard"
+    m.cardStride = spec.cardSize[0] + spec.gap
     ' The cards up to the start card have to exist before the rail can open on it
     window = NOUVEAU_CARD_WINDOW
-    if startIndex + 1 + NOUVEAU_CARD_WINDOW_STEP > window then window = startIndex + 1 + NOUVEAU_CARD_WINDOW_STEP
+    if startIndex + cardsAcross() + NOUVEAU_CARD_WINDOW_STEP > window then window = startIndex + cardsAcross() + NOUVEAU_CARD_WINDOW_STEP
     buildThrough(window)
 
     m.top.stopCount = spec.cards.count() * spec.stopsPerCard
     m.top.entryStop = startIndex * spec.stopsPerCard
-    m.top.railHeight = topOffset + NOUVEAU_FOCUS_CLEARANCE * 2 + m.cardHeight
+    m.growRoom = 0
+    if m.growsCards then m.growRoom = homeCards.GrowRoom(m.cardHeight)
+    m.viewport.translation = [0, topOffset + NOUVEAU_FOCUS_CLEARANCE + m.growRoom]
+    m.top.railHeight = topOffset + NOUVEAU_FOCUS_CLEARANCE * 2 + m.growRoom + m.cardHeight
     ' Kept at the laid-out height, since cards built later can measure taller than the rail has room for
     m.clipHeight = m.cardHeight
     if startIndex > 0 then placeStart(startIndex)
     clipViewport()
 end sub
 
-' Focus reaching past a card shows above and below it, and left of the first card while the rail
-' is at its start. The right edge stays put, since a screen may frame the rail there.
+' Focus reaching past a card shows above and below it, and left of it, where the focused card
+' always sits. The right edge stays put, since a screen may frame the rail there.
 sub clipViewport()
     overhang = m.spec.focusOverhang ?? 0
-    left = 0
-    if m.track.translation[0] = 0 then left = overhang
-    m.viewport.clippingRect = [-left, -overhang, m.viewportWidth + left, m.clipHeight + overhang * 2]
+    left = overhang
+    top = overhang + m.growRoom
+    m.viewport.clippingRect = [-left, -top, m.viewportWidth + left, m.clipHeight + top + overhang]
 end sub
 
-' A start card that already fits leaves the rail where it is. One further along is lined up clear
-' of the left edge, as far in as focusing it leaves it, so the rail doesn't shift on the first press.
+' The start card opens where focusing it puts it, so the rail doesn't shift on the first press
 sub placeStart(index as integer)
-    spec = m.spec
-    left = index * (spec.cardSize[0] + spec.gap)
-    if left + spec.cardSize[0] <= m.viewportWidth - NOUVEAU_SCROLL_CLEARANCE then return
-
-    m.track.translation = [clampOffset(NOUVEAU_SCROLL_CLEARANCE - left), 0]
+    placeTrack(clampOffset(-index * m.cardStride))
 end sub
+
+' Puts the track at once, stopping a glide that would carry it elsewhere
+sub placeTrack(offset as float)
+    m.glide.control = "stop"
+    m.track.translation = [offset, 0]
+end sub
+
+' How many cards fit across the rail, counting the one cut off at the right edge
+function cardsAcross() as integer
+    return Int(m.viewportWidth / m.cardStride) + 1
+end function
 
 ' A rail a rebuild reuses goes back to where it opened, as a newly built one would
 sub resetPlacement()
-    m.track.translation = [0, 0]
+    placeTrack(0)
     if m.startIndex > 0 then placeStart(m.startIndex)
     clipViewport()
 end sub
@@ -110,7 +140,9 @@ end sub
 ' last card's focus stays inside the right edge.
 function clampOffset(offset as float) as float
     spec = m.spec
-    trackWidth = spec.cards.count() * (spec.cardSize[0] + spec.gap) - spec.gap + (spec.focusOverhang ?? 0)
+    trackWidth = spec.cards.count() * m.cardStride - spec.gap + (spec.focusOverhang ?? 0)
+    ' The last card grows to the right, so the track stops short by that too
+    if m.growsCards then trackWidth += homeCards.CornerGrowGap(spec.cardSize[0], 0)
     limit = m.viewportWidth - trackWidth
     if limit > 0 then limit = 0
     if offset < limit then offset = limit
@@ -130,8 +162,8 @@ sub buildThrough(count as integer)
 
     x = 0
     if m.built > 0
-        last = m.track.getChild(m.built - 1)
-        x = last.translation[0] + spec.cardSize[0] + spec.gap
+        last = m.cards[m.built - 1]
+        x = last.translation[0] + m.cardStride
     end if
 
     for i = m.built to count - 1
@@ -146,9 +178,10 @@ sub buildThrough(count as integer)
         node.cardData = spec.cards[i]
         node.translation = [x, 0]
         m.track.appendChild(node)
+        m.cards.push(node)
 
         if node.cardHeight > m.cardHeight then m.cardHeight = node.cardHeight
-        x += spec.cardSize[0] + spec.gap
+        x += m.cardStride
     end for
 
     m.built = count
@@ -172,21 +205,73 @@ function focusStop(stopIndex as integer) as boolean
 
     ' The cards behind the one being reached have to exist before it can be, so
     ' the window grows to cover it and a little beyond
-    if index >= m.built - NOUVEAU_CARD_WINDOW_EDGE
-        buildThrough(index + 1 + NOUVEAU_CARD_WINDOW_STEP)
+    if index + cardsAcross() > m.built - NOUVEAU_CARD_WINDOW_EDGE
+        buildThrough(index + cardsAcross() + NOUVEAU_CARD_WINDOW_STEP)
     end if
 
-    card = m.track.getChild(index)
+    card = m.cards[index]
     if not isValid(card) then return false
 
     applyFocus(stopIndex)
     slideTo(index)
+    ' A growing card reaches over the next one, so it draws last. Moving it drops its focus, so it
+    ' moves before it takes focus.
+    if m.growsCards and not card.isSameNode(m.track.getChild(m.track.getChildCount() - 1))
+        m.track.removeChild(card)
+        m.track.appendChild(card)
+    end if
     card.setFocus(true)
+    growCard(index)
     return true
 end function
 
 sub clearFocus()
     applyFocus(-1)
+    growCard(-1)
+end sub
+
+' Starts growing the card at index (-1 grows none) while the one grown before shrinks. Each picks up
+' from how far it had got, so a card focus comes straight back to (a rebuild restoring focus, or a
+' quick move away and back) carries on rather than starting over.
+sub growCard(index as integer)
+    if not m.growsCards or index = m.growing then return
+    t = m.growDriver.opacity
+    m.grow.control = "stop"
+    grownNow = m.growFrom + (1 - m.growFrom) * t
+    shrunkNow = m.shrinkFrom * (1 - t)
+
+    growFrom = 0.0
+    if index >= 0 and index = m.shrinking
+        growFrom = shrunkNow
+        m.shrinking = -1
+    end if
+    if m.growing >= 0
+        ' One card shrinks at a time, so one still shrinking is put back at once
+        if m.shrinking >= 0 then setCardScale(m.shrinking, 1)
+        m.shrinking = m.growing
+        m.shrinkFrom = grownNow
+    else if m.shrinking >= 0
+        m.shrinkFrom = shrunkNow
+    end if
+    m.growing = index
+    m.growFrom = growFrom
+    m.growDriver.opacity = 0
+    m.grow.control = "start"
+end sub
+
+' Runs every frame of a grow
+sub showGrowth()
+    t = m.growDriver.opacity
+    if m.growing >= 0 then setCardScale(m.growing, 1 + (homeCards.GROW_SCALE - 1) * (m.growFrom + (1 - m.growFrom) * t))
+    if m.shrinking >= 0 then setCardScale(m.shrinking, 1 + (homeCards.GROW_SCALE - 1) * m.shrinkFrom * (1 - t))
+end sub
+
+' The focused card sits at the rail's left edge, so it grows up and right from its bottom left corner
+sub setCardScale(index as integer, scale as float)
+    card = m.cards[index]
+    if not isValid(card) then return
+    card.scaleRotateCenter = [0, card.cardHeight]
+    card.scale = [scale, scale]
 end sub
 
 ' A card either has two halves to mark or one, and a stop below zero marks none
@@ -200,8 +285,8 @@ sub applyFocus(stopIndex as integer)
         part = partForStop(stopIndex)
     end if
 
-    for i = 0 to m.track.getChildCount() - 1
-        child = m.track.getChild(i)
+    for i = 0 to m.cards.count() - 1
+        child = m.cards[i]
         if not isValid(child) then continue for
 
         if child.hasField("focusPart")
@@ -212,20 +297,12 @@ sub applyFocus(stopIndex as integer)
     end for
 end sub
 
-' The track slides only far enough to keep the focused card clear of either edge,
-' so the rail holds still while focus walks across what is already on screen
+' Like Core's rows, the focused card stays where the first one sits and the track glides
+' under it. Near the end the track stops at its last card, and focus walks on to the right.
 sub slideTo(index as integer)
-    spec = m.spec
-    offset = m.track.translation[0]
-    left = index * (spec.cardSize[0] + spec.gap) + offset
-    right = left + spec.cardSize[0]
-
-    if left < NOUVEAU_SCROLL_CLEARANCE
-        offset += NOUVEAU_SCROLL_CLEARANCE - left
-    else if right > m.viewportWidth - NOUVEAU_SCROLL_CLEARANCE
-        offset -= right - (m.viewportWidth - NOUVEAU_SCROLL_CLEARANCE)
-    end if
-
-    m.track.translation = [clampOffset(offset), 0]
-    if isValid(spec.focusOverhang) then clipViewport()
+    target = [clampOffset(-index * m.cardStride), 0]
+    m.glide.control = "stop"
+    if m.track.translation[0] = target[0] then return
+    m.glideInterp.keyValue = [m.track.translation, target]
+    m.glide.control = "start"
 end sub
