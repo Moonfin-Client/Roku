@@ -232,6 +232,8 @@ sub init()
     m.bufferCheckTimer.duration = 30
     m.playbackRetries = 0 ' Track retry attempts for buffering failures
     m.lastBufferError = 0 ' Timestamp of last buffering error
+    ' Where play last got to in the title
+    m.playedTo = 0
     m.playbackSpeed = 1.0
     ' The bitrate cap picked from the controls, kept for the rest of this player, zero for none
     m.maxBitrate = 0
@@ -1428,20 +1430,29 @@ sub showPlaybackErrorDialog(errorMessage as string)
 end sub
 
 ' Restart the stream we already have, which clears a passing hiccup without the
-' cost of asking the server again
+' cost of asking the server again. The server isn't told it stopped, since that ends its
+' session and deletes the stream this restarts.
 sub retryPlaybackInPlace()
-    currentPosition = m.top.position
+    currentPosition = retryFrom(m.top.position, m.playedTo - m.timelineOffset)
+    m.suppressStopReport = true
     m.top.control = VideoControl.STOP
     m.top.seek = currentPosition
     m.top.control = VideoControl.PLAY
 end sub
+
+' Where a retry picks up: where the stream is, or where play last got to when it failed before
+' reaching its start, which reads 0 and would start the title over
+function retryFrom(reported as float, playedTo as float) as float
+    if reported > 0 then return reported
+    return playedTo
+end function
 
 ' Ask the server for playback again from where we are, the way picking the item
 ' off the detail screen does. A stream the server has already torn down cant be
 ' brought back by restarting the same URL, which is why replaying by hand works
 ' when the in place retry does not.
 sub retryPlaybackFromServer(startSeconds = -1 as float)
-    if startSeconds < 0 then startSeconds = mediaPosition()
+    if startSeconds < 0 then startSeconds = retryFrom(mediaPosition(), m.playedTo)
     if startSeconds > 0
         m.global.queueManager.callFunc("setTopStartingPoint", Int(startSeconds * 1000) * 10000&)
     end if
@@ -2457,6 +2468,8 @@ end function
 sub onPositionChanged()
     ' Pass video position data into OSD
     position = mediaPosition()
+    ' An intro's position isn't the title's, and a stopped player reads 0
+    if m.top.position > 0 and not m.LoadMetaDataTask.isIntro then m.playedTo = position
     duration = mediaDuration()
     if duration = 0
         m.osd.progressPercentage = 0
@@ -2668,10 +2681,10 @@ sub onState()
     else if isStringEqual(m.top.state, MediaPlaybackState.PLAYING)
         m.hasPlayed = true
 
-        ' Reset retry counter when playback is successful
+        ' The retries count on until the stream plays a while past its last error, or one that fails
+        ' again seconds after each retry would never run out of them
         if m.playbackRetries > 0
             diagnostics.Playback("Playback resumed after a retry")
-            m.playbackRetries = 0
             m.bufferCheckTimer.duration = 30
         end if
 
@@ -2903,11 +2916,9 @@ sub bufferCheck()
         ' Check that the buffering percentage is increasing
         if m.top.bufferingStatus["percentage"] > m.bufferPercentage
             m.bufferPercentage = m.top.bufferingStatus["percentage"]
-            ' Reset retry counter if buffering is progressing
-            if m.playbackRetries > 0
-                m.playbackRetries = 0
-                m.bufferCheckTimer.duration = 30
-            end if
+            ' Buffering that moves goes back to the usual wait, while its retries stand until the stream has
+            ' played a while
+            if m.playbackRetries > 0 then m.bufferCheckTimer.duration = 30
         else if m.top.content.live = true
             ' A channel that stalls is the live recovery's, which goes by frames rather than the buffer
             return
