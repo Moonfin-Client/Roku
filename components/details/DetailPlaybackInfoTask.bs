@@ -6,7 +6,8 @@ import "pkg:/source/utils/directPlayReasons.bs"
 import "pkg:/source/utils/misc.bs"
 
 ' Asks the server how it would play this item with the tracks the screen has selected, which is
-' what the direct play line and the reasons under it are read from.
+' what the direct play line and the reasons under it are read from. Silo is the exception: it's
+' worked out here, since asking Silo starts playback.
 '
 ' This deliberately doesnt go through the playback path. That one negotiates codecs, opens a
 ' live stream and takes the current session over, none of which a details screen should set in
@@ -52,19 +53,27 @@ sub probePlaybackInfo()
     if m.top.audioStreamIndex > -1 then params.AudioStreamIndex = m.top.audioStreamIndex
     if m.top.subtitleStreamIndex > -1 then params.SubtitleStreamIndex = m.top.subtitleStreamIndex
 
-    path = Substitute("Items/{0}/PlaybackInfo", itemId)
-    if isValid(serverData)
-        req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, path, params)
-        emby = isEmbyServer(serverData.serverUrl)
-    else
-        req = APIRequest(path, params)
-        emby = isEmbyServer()
-    end if
+    ' Silo has no PlaybackInfo to ask: any request starts a playback session. The line is worked out
+    ' here from the item's own versions and this profile instead, like Core does, and Silo makes the
+    ' real choice when playback starts
+    serverUrl = string.EMPTY
+    if isValid(serverData) then serverUrl = serverData.serverUrl
+    onSilo = isSiloServer(serverUrl)
 
     resp = invalid
-    if isValid(req)
-        req.SetRequest("POST")
-        resp = postPlaybackInfo(req, body, emby)
+    if onSilo
+        resp = { MediaSources: chainLookupReturn(itemJson, "MediaSources", []) }
+    else
+        path = Substitute("Items/{0}/PlaybackInfo", itemId)
+        if isValid(serverData)
+            req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, path, params)
+        else
+            req = APIRequest(path, params)
+        end if
+        if isValid(req)
+            req.SetRequest("POST")
+            resp = postPlaybackInfo(req, body, isEmbyServer(serverUrl))
+        end if
     end if
 
     if not isValid(resp) or not isValidAndNotEmpty(resp.MediaSources)
@@ -78,30 +87,57 @@ sub probePlaybackInfo()
         return
     end if
 
-    direct = source.SupportsDirectPlay = true
+    ' Silo's versions all say they play directly, so only the reasons worked out below decide it
+    direct = source.SupportsDirectPlay = true and not onSilo
     reasons = []
     shortReasons = []
     if not direct
-        serverReasons = transcodeReasonsOf(source, resp)
+        serverReasons = []
+        if not onSilo then serverReasons = transcodeReasonsOf(source, resp)
         known = matchingSource(chainLookupReturn(itemJson, "MediaSources", []))
         streams = chainLookupReturn(source, "MediaStreams", [])
         if streams.count() = 0 then streams = chainLookupReturn(known, "MediaStreams", [])
 
         subtitleIndex = invalid
         if m.top.subtitleStreamIndex > -1 then subtitleIndex = m.top.subtitleStreamIndex
+        ' The details screens send -1 for subtitles the viewer turned off, so Silo's local check leaves
+        ' them out rather than falling back to a default or forced track. With no pick yet they send -2,
+        ' which falls back like any other server
+        if onSilo and m.top.subtitleStreamIndex = -1 then subtitleIndex = -1
         audioIndex = invalid
         if m.top.audioStreamIndex > -1 then audioIndex = m.top.audioStreamIndex
 
-        reasons = directPlayReasons.BuildItems({
+        container = source.Container ?? chainLookupReturn(known, "Container", invalid)
+        ' Silo names Matroska "matroska", and the profile lists it as mkv
+        if onSilo and isStringEqual(container, "matroska") then container = "mkv"
+
+        details = directPlayReasons.ResolveDetails({
             serverReasons: serverReasons,
             mediaStreams: streams,
-            container: source.Container ?? chainLookupReturn(known, "Container", invalid),
+            container: container,
             sourceBitrate: directPlayReasons.WholeNumber(source.Bitrate ?? chainLookupReturn(known, "Bitrate", invalid)),
             maxStreamingBitrate: streamingCap(streams),
             audioStreamIndex: audioIndex,
             subtitleStreamIndex: subtitleIndex,
             deviceProfile: deviceProfile
         })
+
+        if onSilo
+            ' With nothing found against the file, the reasons fall back to a general error, which here
+            ' only holds when the profile plays nothing directly (transcoding forced)
+            playsDirect = chainLookupReturn(deviceProfile, "DirectPlayProfiles", []).count() > 0
+            if details.count() = 1 and details[0].reason = "DirectPlayError" and playsDirect then details = []
+            ' A file with no streams listed finds nothing against it, which says nothing when transcoding is forced
+            if details.count() = 0 and not playsDirect then details = [{ reason: "DirectPlayError" }]
+            direct = details.count() = 0
+            for each detail in details
+                serverReasons.push(detail.reason)
+            end for
+        end if
+
+        for each detail in details
+            reasons.push(directPlayReasons.Format(detail))
+        end for
 
         for each reason in serverReasons
             shortReasons.push(directPlayReasons.Format({ reason: reason }).description)
