@@ -59,6 +59,9 @@ sub testSilo()
     assertEqual(problem.code, "not_found", "A problem's code is the last segment of its type")
     assertEqual(silo.ProblemOf({ items: [] }), invalid, "Other bodies aren't problems")
     assertEqual(silo.IsClientUpgradeRequired({ status: 410, problem: { code: "client_upgrade_required" } }), true, "A retired API asks for an upgrade")
+    assertEqual(silo.EndedByServer({ status: 410, problem: { code: "playback_session_ended" } }), true, "An administrator's end is a 410 playback_session_ended")
+    assertEqual(silo.EndedByServer({ status: 410, problem: { code: "client_upgrade_required" } }), false, "A retired API isn't an administrator's end")
+    assertEqual(silo.EndedByServer({ status: 404, problem: { code: "not_found" } }), false, "An expired playing isn't an administrator's end")
 
     ' Routing
     m.global.serverIdentity = { url: "http://silo.test:8090", serverType: "silo" }
@@ -353,6 +356,33 @@ sub testSiloPlayback()
     assertEqual(silo.TimedSidecarUrl("/api/v2/stream/s1/subtitles/0.vtt", "vtt", 0), "/api/v2/stream/s1/subtitles/0.vtt", "A stream from the start keeps its sidecars")
     assertEqual(silo.TitleSeconds({ offsetTicks: 300000000& }, 100000000&), 40, "Progress is the stream's position plus where it starts")
     assertEqual(silo.KbpsOf("140000000"), 140000, "Bitrate caps are in kbps")
+
+    ' An administrator's end. The sessions are kept on the global node, which the test's stands in for
+    m.global.siloPlayback = {}
+    m.global.hasField = function(name as string) as boolean
+        return m.DoesExist(name)
+    end function
+    silo.SavePlaybackSession({ sessionId: "s-live", itemId: "movie-2", profileId: "p1", sequence: 1, planNumber: 2, ended: false }, "s-live")
+    silo.ReportStopped({ body: { PlaySessionId: "s-live~1" } })
+    assertEqual(silo.LiveSessionOf("movie-2") <> invalid, true, "A stop from a plan a replan replaced leaves a live session playing")
+    ended = { sessionId: "s-ended", itemId: "movie-1", profileId: "p1", sequence: 3, ended: true, endedByServer: true, endedAt: CreateObject("roDateTime").AsSeconds() }
+    silo.SavePlaybackSession(ended, "s-ended")
+    assertEqual(silo.EndedByServerOf("movie-1", "p1"), "s-ended", "A title an administrator just ended isn't started again")
+    assertEqual(silo.EndedByServerOf("movie-1", "p2"), "", "Another profile's play of it is its own")
+    silo.SavePlaybackSession({ sessionId: "s-ended", itemId: "movie-1", profileId: "p1", sequence: 1, ended: false }, "s-ended")
+    assertEqual(silo.PlaybackSessions()["s-ended"].endedByServer, true, "A replan's copy doesn't bring the ended session back")
+    assertEqual(silo.EndedByServerOf("movie-1", "p1"), "s-ended", "nor lets the title go before the stop")
+    silo.SavePlaybackSession({ sessionId: "s-ended", itemId: "movie-1", profileId: "p1", sequence: 1, planNumber: 2, ended: false }, "s-ended")
+    silo.ReportStopped({ body: { PlaySessionId: "s-ended~1" } })
+    assertEqual(silo.EndedByServerOf("movie-1", "p1"), "", "The player's stop lets the title go, even from a plan a later replan replaced")
+    silo.SavePlaybackSession({ sessionId: "s-ended", itemId: "movie-1", profileId: "p1", sequence: 4, ended: false }, "s-ended")
+    assertEqual(silo.LiveSessionOf("movie-1"), invalid, "A request still out can't save a released session back")
+    ended.sessionId = "s-old"
+    ended.endedAt = CreateObject("roDateTime").AsSeconds() - silo.ENDED_HOLD_SECONDS - 1
+    silo.SavePlaybackSession(ended, "s-old")
+    assertEqual(silo.EndedByServerOf("movie-1", "p1"), "", "An end whose stop never came lets the title go after a while")
+    m.global.Delete("siloPlayback")
+    m.global.Delete("hasField")
 end sub
 
 sub testSiloExtras()
