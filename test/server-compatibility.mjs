@@ -117,7 +117,7 @@ const selections = {
     'components/music/musicCategoryHost.bs': ['landingCell', 'enteredCell'],
     'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership', 'collectionPage'],
     'components/extras/LoadExtrasTask.bs': ['personRoleIn', 'sortedFeatures', 'featureComesFirst'],
-    'components/details/detailTrackHost.bs': ['SetUpVideoOptions', 'SetUpAudioOptions', 'detailServerSubtitleIndex', 'audioOrdinal', 'audioStreamPosition'],
+    'components/details/detailTrackHost.bs': ['SetUpVideoOptions', 'SetUpAudioOptions', 'detailSubtitlePick', 'detailServerSubtitleIndex', 'audioOrdinal', 'audioStreamPosition'],
     'source/enums/VideoType.bs': null,
     'source/enums/MediaStreamType.bs': null,
     'source/enums/PlaybackMethod.bs': null,
