@@ -114,6 +114,7 @@ sub init()
     m.liveLastState = ""
     m.liveReconnecting = ""
     m.liveLost = false
+    m.liveStartup = invalid
     ' The session holding the channel's stream, and the one a reload replaced, which keeps its
     ' stream until the new one is back. Each is stopped once.
     m.liveSession = invalid
@@ -4122,6 +4123,8 @@ sub onLiveStreamLoaded(load as string)
 
     closeReplacedLiveSession()
     m.liveSession = playbackReportParams()
+    ' Each stream gets its own first 30s, and one go back to its start in them
+    m.liveStartup = { playedAt: invalid, rewound: false }
     hideLiveFailedCard()
     if not isValid(m.liveRecovery) then m.liveRecovery = liveRecovery.Create()
     m.liveRecovery.directPlay = not m.isTranscoded
@@ -4145,6 +4148,7 @@ end sub
 sub feedLiveRecovery(state as string)
     if not isValid(m.liveChannel) then return
     now = liveNow()
+    rewindStartupStall(state, now)
     resumed = m.liveLastState = MediaPlaybackState.PAUSED and (state = MediaPlaybackState.BUFFERING or state = MediaPlaybackState.PLAYING)
     afterError = m.liveLastState = MediaPlaybackState.ERROR
     m.liveLastState = state
@@ -4163,6 +4167,25 @@ sub feedLiveRecovery(state as string)
         return
     end if
     runLiveRecovery()
+end sub
+
+' A stream that runs dry in its first 30s of play goes back to its start, so it has what the server
+' made so far in hand instead of a segment or two. A rewind window opens only after a minute, so no
+' seek of the viewer's can be the buffering here.
+sub rewindStartupStall(state as string, now as integer)
+    startup = m.liveStartup
+    if not isValid(startup) then return
+    if state = MediaPlaybackState.PLAYING
+        if startup.playedAt = invalid then startup.playedAt = now
+        return
+    end if
+    if state <> MediaPlaybackState.BUFFERING or m.liveLastState <> MediaPlaybackState.PLAYING then return
+    playedFor = invalid
+    if startup.playedAt <> invalid then playedFor = now - startup.playedAt
+    if not liveWindow.RewindsStartupStall(playedFor, startup.rewound, m.top.duration) then return
+    startup.rewound = true
+    diagnostics.Playback(`Live stream ran dry ${playedFor}ms into play, going back to its start for ${m.top.duration}s in hand`, diagnostics.LEVEL_WARN)
+    m.top.seek = 0
 end sub
 
 ' A channel past its tune is the recovery's to bring back. Before its first frame it steps down
