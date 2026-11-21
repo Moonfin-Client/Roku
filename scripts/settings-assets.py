@@ -319,6 +319,18 @@ def write_images():
     os.makedirs(home, exist_ok=True)
     write_stroke(os.path.join(home, 'pill14s1.9.png'), 14, 1)
     write_setup_images()
+    write_detail_button_images()
+
+
+def write_detail_button_images():
+    """Stage, Premiere and Quick Look scale the 75 px detail buttons up, a circle to 87 and Play to
+    90, but Roku draws a 9-patch's corners at their own size, so these are cut at the radii the
+    buttons end up with: half of each, so the circles stay round and Play's ends stay a pill."""
+    details = os.path.join(ROOT, 'images/details')
+    for radius in (43, 45):
+        write_fill(os.path.join(details, f'btnfill{radius}.9.png'), radius)
+        write_stroke(os.path.join(details, f'btnborder{radius}.9.png'), radius, 2)
+        write_stroke(os.path.join(details, f'btnborderfocus{radius}.9.png'), radius, 4)
 
 
 def write_setup_images():
