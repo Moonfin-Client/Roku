@@ -479,56 +479,91 @@ namespace silo
         me = 0
         if account.id <> invalid then me = account.id.ToStr().ToInt()
         m.siloSeerrMe = me
-        if me > 0 and isValidAndNotEmpty(account.username) then silo.RequesterNamesOf(r).names[me.ToStr()] = account.username.ToStr()
+        if me > 0 and isValidAndNotEmpty(account.username)
+            mine = {}
+            mine["n_" + me.ToStr()] = account.username.ToStr()
+            silo.RequesterKeep(silo.RequesterNamesOf(r), mine)
+        end if
         permissions = 32 + 262144 + 524288
         if manage then permissions = permissions + 16
         return { id: me, displayName: account.username, permissions: permissions }
     end function
 
-    ' The account names a profile's requests are shown with, by account id
+    ' The account names a profile's requests are shown with, by account id, and when they were last
+    ' read. Each Seerr screen and row reads on a task of its own, so they are kept on a node of the
+    ' global node, a field each under a prefix for the server and profile. A thread without that node
+    ' keeps its own
     function RequesterNamesOf(r as object) as object
+        digest = CreateObject("roEVPDigest")
+        digest.Setup("md5")
+        bytes = CreateObject("roByteArray")
+        bytes.FromAsciiString(r.server + "|" + r.profileId)
+        prefix = "r" + Left(digest.Process(bytes), 16) + "_"
+        if type(m.global) = "roSGNode" and m.global.hasField("siloSeerrRequesters") then return { store: m.global.siloSeerrRequesters, prefix: prefix }
         if type(m.siloSeerrNames) <> "roAssociativeArray" then m.siloSeerrNames = {}
-        key = r.server + "|" + r.profileId
-        kept = m.siloSeerrNames[key]
-        if kept = invalid
-            kept = { names: {}, readAt: invalid, readMineAt: invalid }
-            m.siloSeerrNames[key] = kept
+        return { store: m.siloSeerrNames, prefix: prefix }
+    end function
+
+    function RequesterRecall(kept as object, name as string) as dynamic
+        if type(kept.store) = "roSGNode" then return kept.store.getField(kept.prefix + name)
+        return kept.store[kept.prefix + name]
+    end function
+
+    sub RequesterKeep(kept as object, fields as object)
+        prefixed = {}
+        for each name in fields
+            prefixed[kept.prefix + name] = fields[name]
+        end for
+        if type(kept.store) = "roSGNode"
+            kept.store.update(prefixed, true)
+        else
+            kept.store.Append(prefixed)
         end if
-        return kept
+    end sub
+
+    ' Whether a read kept under name is missing or more than a minute old
+    function RequesterReadDue(kept as object, name as string) as boolean
+        at = silo.RequesterRecall(kept, name)
+        return at = invalid or silo.NowSeconds() - at > 60
     end function
 
     ' Silo's requests name their requester by account id only. The viewer's own name comes from
     ' /account/me; an admin, who sees everyone's, reads the account names when one isn't known yet,
-    ' each at most once a minute. A request whose requester stays unknown shows as by Unknown
+    ' each at most once a minute. A long account list is read 20 pages at a time, and the next request
+    ' list that still has someone unknown goes on from where the last read stopped. A request whose
+    ' requester stays unknown shows as by Unknown
     sub AddRequesterNames(r as object, requests as object)
         kept = silo.RequesterNamesOf(r)
-        if silo.RequesterUnknown(kept, requests) and (kept.readMineAt = invalid or silo.NowSeconds() - kept.readMineAt > 60)
-            kept.readMineAt = silo.NowSeconds()
+        if silo.RequesterUnknown(kept, requests) and silo.RequesterReadDue(kept, "mineAt")
+            silo.RequesterKeep(kept, { mineAt: silo.NowSeconds() })
             silo.SeerrCurrentUser(r)
         end if
-        if silo.RequesterUnknown(kept, requests) and (kept.readAt = invalid or silo.NowSeconds() - kept.readAt > 60) and silo.SeerrIsAdmin(r)
-            kept.readAt = silo.NowSeconds()
-            cursor = ""
+        cursor = silo.RequesterRecall(kept, "cursor") ?? ""
+        if silo.RequesterUnknown(kept, requests) and (cursor <> "" or silo.RequesterReadDue(kept, "readAt")) and silo.SeerrIsAdmin(r)
+            silo.RequesterKeep(kept, { readAt: silo.NowSeconds() })
             guard = 0
             while guard < 20
                 guard++
                 query = { limit: 100 }
                 if cursor <> "" then query.cursor = cursor
                 body = silo.SeerrGet(r, "/admin/users", query)
+                names = {}
                 for each user in silo.SeerrList(body.items)
                     ' Silo's ids are strings
                     if type(user) = "roAssociativeArray" and user.id <> invalid and isValidAndNotEmpty(user.username)
-                        kept.names[user.id.ToStr().ToInt().ToStr()] = user.username.ToStr()
+                        names["n_" + user.id.ToStr().ToInt().ToStr()] = user.username.ToStr()
                     end if
                 end for
+                silo.RequesterKeep(kept, names)
                 cursor = ""
                 if type(body.page) = "roAssociativeArray" and isValidAndNotEmpty(body.page.next_cursor) then cursor = body.page.next_cursor
                 if cursor = "" then exit while
             end while
+            silo.RequesterKeep(kept, { cursor: cursor })
         end if
         for each req in requests
             if type(req.requestedBy) = "roAssociativeArray" and req.requestedBy.id <> invalid
-                name = kept.names[req.requestedBy.id.ToStr()]
+                name = silo.RequesterRecall(kept, "n_" + req.requestedBy.id.ToStr())
                 if name <> invalid then req.requestedBy.displayName = name
             end if
         end for
@@ -536,7 +571,7 @@ namespace silo
 
     function RequesterUnknown(kept as object, requests as object) as boolean
         for each req in requests
-            if type(req.requestedBy) = "roAssociativeArray" and req.requestedBy.id <> invalid and kept.names[req.requestedBy.id.ToStr()] = invalid then return true
+            if type(req.requestedBy) = "roAssociativeArray" and req.requestedBy.id <> invalid and silo.RequesterRecall(kept, "n_" + req.requestedBy.id.ToStr()) = invalid then return true
         end for
         return false
     end function
