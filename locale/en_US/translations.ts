@@ -7083,6 +7083,50 @@
         <translation>Details Screen Style</translation>
     </message>
     <message>
+        <source>Personal Rating Style</source>
+        <translation>Personal Rating Style</translation>
+    </message>
+    <message>
+        <source>Like / dislike</source>
+        <translation>Like / dislike</translation>
+    </message>
+    <message>
+        <source>5 stars</source>
+        <translation>5 stars</translation>
+    </message>
+    <message>
+        <source>Numeric score out of 10</source>
+        <translation>Numeric score out of 10</translation>
+    </message>
+    <message>
+        <source>Rating Intervals</source>
+        <translation>Rating Intervals</translation>
+    </message>
+    <message>
+        <source>Whole stars (0–5)</source>
+        <translation>Whole stars (0–5)</translation>
+    </message>
+    <message>
+        <source>Half stars (0.5 steps)</source>
+        <translation>Half stars (0.5 steps)</translation>
+    </message>
+    <message>
+        <source>Quarter stars (0.25 steps)</source>
+        <translation>Quarter stars (0.25 steps)</translation>
+    </message>
+    <message>
+        <source>Whole numbers (0–10)</source>
+        <translation>Whole numbers (0–10)</translation>
+    </message>
+    <message>
+        <source>Half points (0.5 steps)</source>
+        <translation>Half points (0.5 steps)</translation>
+    </message>
+    <message>
+        <source>Quarter points (0.25 steps)</source>
+        <translation>Quarter points (0.25 steps)</translation>
+    </message>
+    <message>
         <source>Diagnostics &amp; Logging</source>
         <translation>Diagnostics &amp; Logging</translation>
     </message>
