@@ -1673,7 +1673,7 @@
     </message>
     <message>
         <source>Default (Varies By Media Type)</source>
-        <translation>Por defecto (por tipo de medios)</translation>
+        <translation>Por defecto (varía según el tipo de medio)</translation>
     </message>
     <message>
         <source>Landscape (Wide)</source>
@@ -4786,7 +4786,7 @@
     </message>
     <message>
         <source>Privacy Policy</source>
-        <translation>política de privacidad</translation>
+        <translation>Política de Privacidad</translation>
     </message>
     <message>
         <source>How Moonfin handles your data</source>
@@ -6687,6 +6687,14 @@
     <message>
         <source>Hide Unwatched Count</source>
         <translation>Ocultar conteo de no vistos</translation>
+    </message>
+    <message>
+        <source>Run Setup Again</source>
+        <translation>Ejecutar la configuración otra vez</translation>
+    </message>
+    <message>
+        <source>Run setup again</source>
+        <translation>Ejecutar la configuración otra vez</translation>
     </message>
 </context>
 </TS>
