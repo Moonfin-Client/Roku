@@ -64,6 +64,11 @@ sub init()
     m.loadGeneration = 0
     m.listTask.addField("generation", "integer", false)
     m.staleListTasks = []
+    ' While a cancel or remove waits on Silo, the start of the earliest page that landed meanwhile,
+    ' or -1. Silo may have dropped the request before that page read the list
+    m.removalOut = false
+    m.pageDuringRemoval = -1
+    m.pageSkip = 0
     ' Each title's queue, kept across reloads, as "movie:603" or "tv:1399"
     m.arrQueues = {}
     m.arrPending = []
@@ -223,6 +228,9 @@ sub reload()
     m.gridStop = 0
     m.hasMore = true
     m.loadingMore = false
+    ' A removal still out belongs to the old list, whose pages are gone
+    m.removalOut = false
+    m.pageDuringRemoval = -1
     activeList().content = invalid
 
     showState(tr("Loading requests..."), false)
@@ -251,6 +259,7 @@ sub requestPage(skip as integer)
     m.listTask = CreateObject("roSGNode", "SeerrAPITask")
     m.listTask.addField("generation", "integer", false)
     m.listTask.generation = m.loadGeneration
+    m.pageSkip = skip
     m.listTask.request = { method: "GET", endpoint: endpoint, queryParams: params }
     m.listTask.observeField("response", "onPageLoaded")
     m.listTask.control = TaskControl.RUN
@@ -362,6 +371,7 @@ sub settleHydration()
 end sub
 
 sub finishPage()
+    if m.removalOut and m.pageSkip > 0 and (m.pageDuringRemoval < 0 or m.pageSkip < m.pageDuringRemoval) then m.pageDuringRemoval = m.pageSkip
     m.hydrationExpected = 0
     m.hydrationTasks = []
 
@@ -714,6 +724,8 @@ sub sendRequestAction(action as string)
     requestId = chainLookupReturn(m.activeItem, "id", invalid)
 
     m.pendingAction = action
+    m.removalOut = action = "cancel" or action = "remove"
+    m.pageDuringRemoval = -1
     endpoint = `/api/v1/request/${requestId.toStr()}`
     request = { method: "DELETE", endpoint: endpoint }
     if action <> "cancel" then request = { method: "POST", endpoint: `${endpoint}/${action}` }
@@ -727,6 +739,9 @@ end sub
 
 sub onRequestActionDone(event as object)
     response = event.getData()
+    landed = m.pageDuringRemoval
+    m.removalOut = false
+    m.pageDuringRemoval = -1
 
     if not isValid(response) or not response.success
         ' Silo refuses a failed request that was retried or got a copy meanwhile, so the tile is
@@ -757,8 +772,13 @@ sub onRequestActionDone(event as object)
 
     stopLoadingSpinner()
     if action = "cancel" or action = "remove"
+        removedBefore = landed > 0 and m.activeIndex < landed
         dropActiveItem()
-        restartPendingPage()
+        if m.loadingMore
+            restartPendingPage()
+        else if removedBefore
+            rereadLandedPages(landed)
+        end if
         return
     end if
     patchActiveStatus(action = "decline" ? SEERR_REQUEST_DECLINED : SEERR_REQUEST_APPROVED)
@@ -828,6 +848,27 @@ sub restartPendingPage()
     if not m.loadingMore then return
 
     m.loadGeneration++
+    requestPage(m.items.count())
+end sub
+
+' A page that landed while the removal was out may have read the list after Silo dropped the
+' request, so it started one past where it should and missed one. Its tiles and any after them are
+' dropped and read again from one before where it started
+sub rereadLandedPages(start as integer)
+    if start - 1 <= 0
+        reload()
+        return
+    end if
+
+    kept = []
+    for i = 0 to start - 2
+        if i < m.items.count() then kept.push(m.items[i])
+    end for
+    m.items = kept
+    m.loadGeneration++
+    m.hasMore = true
+    m.loadingMore = true
+    renderItems()
     requestPage(m.items.count())
 end sub
 
