@@ -657,8 +657,17 @@ sub runRequestAction(action as string)
 end sub
 
 sub confirmRemove()
-    media = chainLookupReturn(m.activeItem, "media", {})
-    title = chainLookupReturn(media, "title", invalid) ?? chainLookupReturn(media, "name", tr("Unknown"))
+    title = Chr(34) + SeerrMediaTitle(chainLookupReturn(m.activeItem, "media", invalid)) + Chr(34)
+    ' An admin can remove anyone's failed request, so the confirm says whose it is when it isn't theirs
+    message = Substitute(tr("Your failed request for ^0 will be deleted. You can request it again later."), title)
+    if chainLookupReturn(m.activeItem, "requestedByViewer", true) = false
+        name = SeerrRequesterName(m.activeItem)
+        if name = tr("Unknown")
+            message = Substitute(tr("Another user's failed request for ^0 will be deleted. They can request it again later."), title)
+        else
+            message = Substitute(tr("The failed request for ^0 by ^1 will be deleted. They can request it again later."), title, name)
+        end if
+    end if
     m.removeDialog = CreateObject("roSGNode", "StandardMessageDialog")
     ' The user's dialog colors, as SceneManager's optionDialog sets them
     palette = CreateObject("roSGNode", "RSGPalette")
@@ -671,7 +680,7 @@ sub confirmRemove()
     }
     m.removeDialog.palette = palette
     m.removeDialog.title = tr("Remove Request")
-    m.removeDialog.message = [Substitute(tr("Your failed request for ^0 will be deleted. You can request it again later."), Chr(34) + title.toStr() + Chr(34))]
+    m.removeDialog.message = [message]
     m.removeDialog.buttons = [tr("Keep"), tr("Remove Request")]
     m.removeDialog.observeField("buttonSelected", "onRemoveDialogButton")
     m.removeDialog.observeField("wasClosed", "onRemoveDialogClosed")
@@ -710,8 +719,8 @@ sub onRequestActionDone(event as object)
 
     if not isValid(response) or not response.success
         ' Silo refuses a failed request that was retried or got a copy meanwhile, so the tile is
-        ' read again to show where it stands
-        if m.pendingAction = "remove"
+        ' read again to show where it stands. Any other failure leaves the tile as it was
+        if m.pendingAction = "remove" and chainLookupReturn(response, "statusCode", 0) = 409
             m.retryTask = CreateObject("roSGNode", "SeerrAPITask")
             m.retryTask.request = { method: "GET", endpoint: `/api/v1/request/${m.activeItem.id.toStr()}` }
             m.retryTask.observeField("response", "onRefusedRemove")
@@ -719,6 +728,7 @@ sub onRequestActionDone(event as object)
             return
         end if
         stopLoadingSpinner()
+        if m.pendingAction = "remove" then setStop(0)
         return
     end if
 
@@ -762,7 +772,8 @@ sub onRefusedRemove(event as object)
     setStop(0)
     response = event.getData()
     fresh = chainLookupReturn(response, "data", invalid)
-    if isValid(response) and response.success = true and type(fresh) = "roAssociativeArray" then applyFreshRequest(fresh)
+    ' A failed read still answers with an empty request, so only the same request is applied
+    if isValid(response) and response.success = true and type(fresh) = "roAssociativeArray" and isValid(fresh.id) and fresh.id = m.activeItem.id then applyFreshRequest(fresh)
 end sub
 
 sub applyFreshRequest(fresh as object)
@@ -772,6 +783,9 @@ sub applyFreshRequest(fresh as object)
     for each key in fresh
         if key <> "media" then entry[key] = fresh[key]
     end for
+    ' The media keeps its filled-in title and art, but takes the fresh status
+    freshStatus = chainLookupReturn(fresh, "media.status", invalid)
+    if isValid(freshStatus) and type(entry.media) = "roAssociativeArray" then entry.media.status = freshStatus
     m.items[m.activeIndex] = entry
     renderItems()
 end sub

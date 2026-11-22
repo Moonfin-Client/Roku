@@ -667,6 +667,14 @@
         <translation>Your failed request for ^0 will be deleted. You can request it again later.</translation>
     </message>
     <message>
+        <source>The failed request for ^0 by ^1 will be deleted. They can request it again later.</source>
+        <translation>The failed request for ^0 by ^1 will be deleted. They can request it again later.</translation>
+    </message>
+    <message>
+        <source>Another user's failed request for ^0 will be deleted. They can request it again later.</source>
+        <translation>Another user's failed request for ^0 will be deleted. They can request it again later.</translation>
+    </message>
+    <message>
         <source>Run Setup Again</source>
         <translation>Run Setup Again</translation>
     </message>
