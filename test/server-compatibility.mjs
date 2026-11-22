@@ -377,7 +377,14 @@ for (const name of [
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/achievement-unlocks.bs', 'utf8');
 for (const file of ['source/api/silo/SiloSession.bs', 'source/api/silo/SiloMapper.bs', 'source/api/silo/SiloMediaSources.bs', 'source/api/silo/SiloImages.bs', 'source/api/silo/SiloAccount.bs', 'source/api/silo/SiloPager.bs', 'source/api/silo/SiloCatalog.bs', 'source/api/silo/SiloHome.bs', 'source/api/silo/SiloActions.bs', 'source/api/silo/SiloPlayback.bs', 'source/api/silo/SiloExtras.bs', 'source/api/silo/SiloSeerr.bs', 'source/api/silo/SiloRouter.bs', 'source/api/silo/SiloWatchParty.bs']) {
-    source += '\n' + (await readFile(file, 'utf8')).replace(/^import .*$/gm, '');
+    let text = (await readFile(file, 'utf8')).replace(/^import .*$/gm, '');
+    if (file.endsWith('SiloSeerr.bs')) {
+        // The Remove call goes to a recorded fake, so the tests can check what is sent and how each answer is read
+        const removeCall = 'answer = silo.Call(r.server, "/api/v2/requests/" + requestPath, { method: "DELETE"';
+        assert.ok(text.includes(removeCall), 'The Silo Remove call is where the tests expect it');
+        text = text.replace(removeCall, 'answer = testSiloCall(r.server, "/api/v2/requests/" + requestPath, { method: "DELETE"');
+    }
+    source += '\n' + text;
 }
 source += '\n' + await readFile('test/silo.bs', 'utf8');
 source += '\n' + await readFile('test/silo-watch-party.bs', 'utf8');
