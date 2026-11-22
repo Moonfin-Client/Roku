@@ -1,3 +1,4 @@
+import "pkg:/source/enums/ColorPalette.bs"
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/utils/misc.bs"
@@ -510,13 +511,16 @@ function requesterSplits() as boolean
 end function
 
 ' A moderator answers a pending request or sends a failed one again, and anyone else can take
-' back their own pending one
+' back their own pending one. Silo also lets a failed request that delivered nothing be removed
 function requestActions(entry as object) as object
     status = chainLookupReturn(entry, "status", 0)
     if status = SEERR_REQUEST_PENDING and m.canManageRequests then return ["approve", "decline"]
     if status = SEERR_REQUEST_PENDING and m.seerrUserId > 0 and chainLookupReturn(entry, "requestedBy.id", -1) = m.seerrUserId then return ["cancel"]
-    if status = SEERR_REQUEST_FAILED and m.canManageRequests then return ["retry"]
-    return []
+    if status <> SEERR_REQUEST_FAILED then return []
+    actions = []
+    if m.canManageRequests then actions.push("retry")
+    if entry.canRemove = true then actions.push("remove")
+    return actions
 end function
 
 sub onListItemFocused(event as object)
@@ -640,10 +644,54 @@ sub openActiveMedia()
     })
 end sub
 
-' Answered straight from the button, with no confirm first
+' Answered straight from the button, with no confirm first, except Remove, which deletes the
+' request for good
 sub runRequestAction(action as string)
     requestId = chainLookupReturn(m.activeItem, "id", invalid)
     if not isValid(requestId) then return
+    if action = "remove"
+        confirmRemove()
+        return
+    end if
+    sendRequestAction(action)
+end sub
+
+sub confirmRemove()
+    media = chainLookupReturn(m.activeItem, "media", {})
+    title = chainLookupReturn(media, "title", invalid) ?? chainLookupReturn(media, "name", tr("Unknown"))
+    m.removeDialog = CreateObject("roSGNode", "StandardMessageDialog")
+    ' The user's dialog colors, as SceneManager's optionDialog sets them
+    palette = CreateObject("roSGNode", "RSGPalette")
+    palette.colors = {
+        DialogBackgroundColor: chainLookupReturn(m.global.session, "user.settings.colorDialogBackground", ColorPalette.ELEMENTBACKGROUND),
+        DialogFocusColor: chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT),
+        DialogFocusItemColor: chainLookupReturn(m.global.session, "user.settings.colorDialogSelectedText", ColorPalette.WHITE),
+        DialogSecondaryItemColor: chainLookupReturn(m.global.session, "user.settings.colorDialogBorderLine", ColorPalette.LIGHTBLUE),
+        DialogTextColor: chainLookupReturn(m.global.session, "user.settings.colorDialogText", ColorPalette.WHITE)
+    }
+    m.removeDialog.palette = palette
+    m.removeDialog.title = tr("Remove Request")
+    m.removeDialog.message = [Substitute(tr("Your failed request for ^0 will be deleted. You can request it again later."), Chr(34) + title.toStr() + Chr(34))]
+    m.removeDialog.buttons = [tr("Keep"), tr("Remove Request")]
+    m.removeDialog.observeField("buttonSelected", "onRemoveDialogButton")
+    m.removeDialog.observeField("wasClosed", "onRemoveDialogClosed")
+    m.top.getScene().dialog = m.removeDialog
+end sub
+
+sub onRemoveDialogButton(event as object)
+    confirmed = event.getData() = 1
+    m.removeDialog.close = true
+    if confirmed then sendRequestAction("remove")
+end sub
+
+sub onRemoveDialogClosed()
+    m.removeDialog = invalid
+    m.gridFocus.setFocus(true)
+    lightTile(true)
+end sub
+
+sub sendRequestAction(action as string)
+    requestId = chainLookupReturn(m.activeItem, "id", invalid)
 
     m.pendingAction = action
     endpoint = `/api/v1/request/${requestId.toStr()}`
@@ -661,6 +709,15 @@ sub onRequestActionDone(event as object)
     response = event.getData()
 
     if not isValid(response) or not response.success
+        ' Silo refuses a failed request that was retried or got a copy meanwhile, so the tile is
+        ' read again to show where it stands
+        if m.pendingAction = "remove"
+            m.retryTask = CreateObject("roSGNode", "SeerrAPITask")
+            m.retryTask.request = { method: "GET", endpoint: `/api/v1/request/${m.activeItem.id.toStr()}` }
+            m.retryTask.observeField("response", "onRefusedRemove")
+            m.retryTask.control = TaskControl.RUN
+            return
+        end if
         stopLoadingSpinner()
         return
     end if
@@ -678,7 +735,7 @@ sub onRequestActionDone(event as object)
     end if
 
     stopLoadingSpinner()
-    if action = "cancel"
+    if action = "cancel" or action = "remove"
         dropActiveItem()
         return
     end if
@@ -695,6 +752,20 @@ sub onRetriedRequest(event as object)
         patchActiveStatus(SEERR_REQUEST_APPROVED)
         return
     end if
+    applyFreshRequest(fresh)
+end sub
+
+sub onRefusedRemove(event as object)
+    stopLoadingSpinner()
+    ' The tile's buttons change with its state, so focus goes back to the tile rather than onto
+    ' whichever button now sits where Remove was
+    setStop(0)
+    response = event.getData()
+    fresh = chainLookupReturn(response, "data", invalid)
+    if isValid(response) and response.success = true and type(fresh) = "roAssociativeArray" then applyFreshRequest(fresh)
+end sub
+
+sub applyFreshRequest(fresh as object)
     if m.activeIndex < 0 or m.activeIndex >= m.items.count() then return
 
     entry = m.items[m.activeIndex]

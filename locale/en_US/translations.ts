@@ -659,6 +659,14 @@
         <translation>Retry</translation>
     </message>
     <message>
+        <source>Remove Request</source>
+        <translation>Remove Request</translation>
+    </message>
+    <message>
+        <source>Your failed request for ^0 will be deleted. You can request it again later.</source>
+        <translation>Your failed request for ^0 will be deleted. You can request it again later.</translation>
+    </message>
+    <message>
         <source>Run Setup Again</source>
         <translation>Run Setup Again</translation>
     </message>

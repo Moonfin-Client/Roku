@@ -430,6 +430,22 @@ namespace silo
 
     ' ---- Requests
 
+    ' The server's rule for removeFailedRequest: failed, and no quality was delivered. It also lets
+    ' the owner or an admin do it, and the lists here only hold the viewer's own requests unless the
+    ' viewer is an admin. An older Silo leaves remove_failed_supported out and gets no Remove
+    function SeerrRemovable(req as object) as boolean
+        if m.siloRemoveFailed <> true or req.outcome <> "failed" then return false
+        for each target in silo.SeerrList(req.targets)
+            if type(target) = "roAssociativeArray" and target.status = "completed" then return false
+        end for
+        return true
+    end function
+
+    ' Reads whether this Silo offers removeFailedRequest, kept for ten minutes like the other answers
+    sub ReadRemoveFailed(r as object)
+        m.siloRemoveFailed = silo.SeerrGetKept(r, "/requests/status", 600).remove_failed_supported = true
+    end sub
+
     function MapSeerrRequest(req as object) as object
         kind = silo.SeerrType(req.media_type)
         status = silo.RequestStatusOf(req.state)
@@ -443,7 +459,7 @@ namespace silo
         for each number in silo.SeerrList(req.seasons)
             if siloMap.IsNumber(number) then seasons.Push({ id: number, seasonNumber: number, status: status, createdAt: req.created_at, updatedAt: req.updated_at })
         end for
-        out = { id: silo.RequestNumber(req.id), status: status, createdAt: req.created_at, updatedAt: req.updated_at, type: kind, is4k: false, media: media, seasonCount: seasons.Count(), seasons: seasons }
+        out = { id: silo.RequestNumber(req.id), status: status, createdAt: req.created_at, updatedAt: req.updated_at, type: kind, is4k: false, canRemove: silo.SeerrRemovable(req), media: media, seasonCount: seasons.Count(), seasons: seasons }
         if req.requested_by_user_id <> invalid then out.requestedBy = { id: req.requested_by_user_id.ToStr().ToInt() }
         return out
     end function
@@ -531,6 +547,7 @@ namespace silo
         filter = q.filter ?? ""
         by = q.requestedBy
         me = m.siloSeerrMe ?? 0
+        silo.ReadRemoveFailed(r)
         found = invalid
         if not silo.SeerrIsAdmin(r) or (by <> invalid and by.ToInt() = me)
             found = silo.ReadSeerrRequests(r, "/requests/mine", {}, skip + take, filter)
@@ -630,6 +647,12 @@ namespace silo
             ' Seerr deletes a request; Silo cancels it, which keeps its history
             if verb = "DELETE" then return silo.SeerrPost(r, "/api/v2/requests/" + requestPath + "/cancel")
             if third = "approve" or third = "decline" or third = "retry" then return silo.SeerrPost(r, "/api/v2/admin/requests/" + requestPath + "/" + third)
+            ' Silo deletes a failed request that delivered nothing; 409 once it was retried or got a copy
+            if verb = "POST" and third = "remove"
+                answer = silo.Call(r.server, "/api/v2/requests/" + requestPath, { method: "DELETE", account: r.account, profileId: r.profileId })
+                return silo.StatusOnly(answer.status)
+            end if
+            silo.ReadRemoveFailed(r)
             return silo.Ok(silo.MapSeerrRequest(silo.SeerrGet(r, "/requests/" + requestPath)))
         end if
         if first = "watchlist"
