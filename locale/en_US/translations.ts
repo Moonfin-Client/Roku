@@ -7506,6 +7506,14 @@
         <translation>Show Technical Details</translation>
     </message>
     <message>
+        <source>Show Full Date</source>
+        <translation>Show Full Date</translation>
+    </message>
+    <message>
+        <source>Show the full release or air date instead of only the year on details pages</source>
+        <translation>Show the full release or air date instead of only the year on details pages</translation>
+    </message>
+    <message>
         <source>Show Text</source>
         <translation>Show Text</translation>
     </message>
