@@ -1236,6 +1236,8 @@ const syncFunction = (name) => syncSource.match(new RegExp(`^    (?:function|sub
 assert.match(syncFunction('PullFromServer'), /FetchResolvedProfile\(settingsSync\.ActiveProfile\(\)\)/, 'A pull reads the profile in use');
 assert.doesNotMatch(syncSource, /Settings\/(?:Profile|Resolved)\/tv/, 'No route names the TV profile outright');
 assert.match(syncFunction('ProfileBody'), /FormatJson\(\{ "profile": profileData, "clientId": "roku" \}\)/, 'The push body keeps its keys\' case on the device');
+const siloRatingWrites = (await readFile('source/api/silo/SiloActions.bs', 'utf8')).match(/silo\.Write\(r, "PUT", ratingPath, [^)]*\)/g);
+assert.deepEqual(siloRatingWrites, Array(2).fill('silo.Write(r, "PUT", ratingPath, { "rating": score })'), 'Both Silo rating writes keep their key\'s case on the device');
 assert.doesNotMatch(syncFunction('GetMappings'), /plugin\.syncProfile/, 'The picked profile never syncs');
 assert.match(syncSource, /pluginKey: "tmdbApiKey"[^}]*receiveOnly: true/, 'The TMDB key is never saved back or reset');
 assert.match(syncFunction('FullProfile'), /profileData\["seerrRows"\][^]*profileData\["homeSections"\][^]*profileData\["homeRowOrder"\]/, 'A save carries the Seerr rows and the whole home layout');
