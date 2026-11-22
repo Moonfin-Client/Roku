@@ -479,9 +479,65 @@ namespace silo
         me = 0
         if account.id <> invalid then me = account.id.ToStr().ToInt()
         m.siloSeerrMe = me
+        if me > 0 and isValidAndNotEmpty(account.username) then silo.RequesterNamesOf(r).names[me.ToStr()] = account.username.ToStr()
         permissions = 32 + 262144 + 524288
         if manage then permissions = permissions + 16
         return { id: me, displayName: account.username, permissions: permissions }
+    end function
+
+    ' The account names a profile's requests are shown with, by account id
+    function RequesterNamesOf(r as object) as object
+        if type(m.siloSeerrNames) <> "roAssociativeArray" then m.siloSeerrNames = {}
+        kept = m.siloSeerrNames[r.profileId]
+        if kept = invalid
+            kept = { names: {}, readAt: invalid, readMine: false }
+            m.siloSeerrNames[r.profileId] = kept
+        end if
+        return kept
+    end function
+
+    ' Silo's requests name their requester by account id only. The viewer's own name comes from
+    ' /account/me; an admin, who sees everyone's, reads the account names when one isn't known yet,
+    ' at most once a minute. A request whose requester stays unknown shows as by Unknown
+    sub AddRequesterNames(r as object, requests as object)
+        kept = silo.RequesterNamesOf(r)
+        if silo.RequesterUnknown(kept, requests) and not kept.readMine
+            kept.readMine = true
+            silo.SeerrCurrentUser(r)
+        end if
+        if silo.RequesterUnknown(kept, requests) and (kept.readAt = invalid or silo.NowSeconds() - kept.readAt > 60) and silo.SeerrIsAdmin(r)
+            kept.readAt = silo.NowSeconds()
+            cursor = ""
+            guard = 0
+            while guard < 20
+                guard++
+                query = { limit: 100 }
+                if cursor <> "" then query.cursor = cursor
+                body = silo.SeerrGet(r, "/admin/users", query)
+                for each user in silo.SeerrList(body.items)
+                    ' Silo's ids are strings
+                    if type(user) = "roAssociativeArray" and user.id <> invalid and isValidAndNotEmpty(user.username)
+                        kept.names[user.id.ToStr().ToInt().ToStr()] = user.username.ToStr()
+                    end if
+                end for
+                cursor = ""
+                if type(body.page) = "roAssociativeArray" and isValidAndNotEmpty(body.page.next_cursor) then cursor = body.page.next_cursor
+                if cursor = "" then exit while
+            end while
+        end if
+        for each req in requests
+            if type(req.requestedBy) = "roAssociativeArray" and req.requestedBy.id <> invalid
+                name = kept.names[req.requestedBy.id.ToStr()]
+                if name <> invalid then req.requestedBy.displayName = name
+            end if
+        end for
+    end sub
+
+    function RequesterUnknown(kept as object, requests as object) as boolean
+        for each req in requests
+            if type(req.requestedBy) = "roAssociativeArray" and req.requestedBy.id <> invalid and kept.names[req.requestedBy.id.ToStr()] = invalid then return true
+        end for
+        return false
     end function
 
     function SeerrStatus(r as object) as object
@@ -542,6 +598,7 @@ namespace silo
             found = silo.ReadSeerrRequests(r, "/admin/requests", query, skip + take, filter)
         end if
         results = silo.Slice(found.requests, skip, take).Items
+        silo.AddRequesterNames(r, results)
         known = found.requests.Count()
         if found.more then known++
         pages = 1
@@ -630,7 +687,9 @@ namespace silo
             ' Seerr deletes a request; Silo cancels it, which keeps its history
             if verb = "DELETE" then return silo.SeerrPost(r, "/api/v2/requests/" + requestPath + "/cancel")
             if third = "approve" or third = "decline" or third = "retry" then return silo.SeerrPost(r, "/api/v2/admin/requests/" + requestPath + "/" + third)
-            return silo.Ok(silo.MapSeerrRequest(silo.SeerrGet(r, "/requests/" + requestPath)))
+            one = silo.MapSeerrRequest(silo.SeerrGet(r, "/requests/" + requestPath))
+            silo.AddRequesterNames(r, [one])
+            return silo.Ok(one)
         end if
         if first = "watchlist"
             if verb = "POST" and type(r.body) = "roAssociativeArray"
