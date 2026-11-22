@@ -11376,11 +11376,6 @@
         <translation>Family Movie Night</translation>
     </message>
     <message>
-        <source>Family Movie Night</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (familyMovieNight)</extracomment>
-        <translation>Family Movie Night</translation>
-    </message>
-    <message>
         <source>Animated Halloween</source>
         <extracomment>Title of a seasonal row on a Silo server&apos;s Home (halloween)</extracomment>
         <translation>Animated Halloween</translation>
@@ -11448,21 +11443,6 @@
     <message>
         <source>Summer Nostalgia</source>
         <extracomment>Title of a seasonal row on a Silo server&apos;s Home (summer)</extracomment>
-        <translation>Summer Nostalgia</translation>
-    </message>
-    <message>
-        <source>Summer Blockbusters</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (summerBlockbuster)</extracomment>
-        <translation>Summer Blockbusters</translation>
-    </message>
-    <message>
-        <source>Classic Summer Movies</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (summerBlockbuster)</extracomment>
-        <translation>Classic Summer Movies</translation>
-    </message>
-    <message>
-        <source>Summer Nostalgia</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (summerBlockbuster)</extracomment>
         <translation>Summer Nostalgia</translation>
     </message>
     <message>
