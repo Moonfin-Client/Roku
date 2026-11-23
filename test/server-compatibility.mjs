@@ -44,6 +44,8 @@ brs.types.RoRegex.prototype.registerMethods = function (methods) {
 const selections = {
     'source/utils/serverCompatibility.bs': null,
     'source/utils/accentFolding.bs': null,
+    'source/utils/fontRegistry.bs': null,
+    'source/utils/fontApply.bs': null,
     'source/utils/startupPrefetch.bs': null,
     'source/utils/libraryFilters.bs': null,
     'source/utils/itemMenu.bs': null,
@@ -171,6 +173,7 @@ source += '\n' + await readFile('test/emby-details.bs', 'utf8');
 source += '\n' + await readFile('test/server-compatibility.bs', 'utf8');
 source += '\n' + await readFile('test/review-regressions.bs', 'utf8');
 source += '\n' + await readFile('test/accent-folding.bs', 'utf8');
+source += '\n' + await readFile('test/fallback-font.bs', 'utf8');
 source += '\n' + await readFile('test/quick-connect-url.bs', 'utf8');
 source += '\n' + await readFile('test/sign-in-refused.bs', 'utf8');
 source += '\n' + await readFile('test/saved-users.bs', 'utf8');
