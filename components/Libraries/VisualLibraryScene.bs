@@ -11,7 +11,6 @@ import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/String.bs"
 import "pkg:/source/enums/TaskControl.bs"
-import "pkg:/source/utils/accentFolding.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/libraryCard.bs"
@@ -169,7 +168,6 @@ sub init()
     m.top.optionsAvailable = false
     setupNodes()
     m.allItems = []
-    m.searchNames = []
     m.searchQuery = ""
 
     m.itemGrid.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
@@ -424,7 +422,7 @@ sub redrawItems()
     applyGridMetrics()
 
     focused = m.grid.itemFocused
-    applySearchFilter()
+    showLoadedItems()
 
     ' Reset cursor back to its previous location
     if focused > 0 then m.grid.jumpToItem = focused
@@ -1035,7 +1033,7 @@ sub onDisplayChosen(event as object)
         relayout()
     else if section = "playlistTypes"
         togglePlaylistType(value)
-        applySearchFilter()
+        showLoadedItems()
     else if value = "letterNav"
         set_user_setting(`library_letterNav_${libraryId}`, letterNavOn() ? "off" : "on")
         applyLetterNav()
@@ -1113,7 +1111,7 @@ sub relayout()
     layoutClassicButtons()
     applyGridMetrics()
     applyLetterNav()
-    applySearchFilter()
+    showLoadedItems()
     if m.grouping <> "" then loadMoreData()
 end sub
 
@@ -1319,10 +1317,10 @@ sub ItemDataLoaded(msg)
     end for
     noteCardSubtitles(itemData)
 
-    ' A search or a narrowed set of playlist types redraws from everything loaded, and a
-    ' grouping only takes in the page that just arrived
+    ' A narrowed set of playlist types redraws from everything loaded, and a grouping only takes
+    ' in the page that just arrived
     if narrowing()
-        applySearchFilter()
+        showLoadedItems()
     else
         m.data.appendChildren(itemData)
         if m.grouping = "playlists"
@@ -1387,7 +1385,7 @@ function dialogOpen() as boolean
 end function
 
 function narrowing() as boolean
-    return m.searchQuery.Trim() <> "" or m.playlistTypes.count() < playlistGrouping.Categories().count()
+    return m.playlistTypes.count() < playlistGrouping.Categories().count()
 end function
 
 ' The sideways grid only draws the cards in view, so it's told when its content grows under it
@@ -1875,7 +1873,7 @@ sub onPlaylistCategories(event as object)
     if m.grouping = "playlists"
         refreshPlaylistGroups()
     else if narrowing()
-        applySearchFilter()
+        showLoadedItems()
     end if
 end sub
 
@@ -1907,16 +1905,14 @@ sub resetLoadedItems()
     m.serverPosition = 0
     m.blockedCount = 0
     m.allItems = []
-    m.searchNames = []
     m.data = createSGNode("ContentNode")
     m.grid.content = m.data
     resetCategoryGroups()
     m.groupRows.content = createSGNode("ContentNode")
 end sub
 
-' The query narrows what is already loaded rather than asking the server again, so the
-' grid answers on every keystroke
-sub applySearchFilter()
+' Redraws from everything loaded, leaving out the playlist types that are unchecked
+sub showLoadedItems()
     m.data = createSGNode("ContentNode")
     m.data.appendChildren(filteredItems())
     showContent()
@@ -1940,25 +1936,11 @@ sub showContent()
 end sub
 
 function filteredItems() as object
-    items = m.allItems
-    query = accentFolding.ForSearch(m.searchQuery.Trim())
-    if query <> ""
-        ' Folding costs more than matching, so each name is only folded once
-        for i = m.searchNames.count() to m.allItems.count() - 1
-            m.searchNames.push(sortableName(m.allItems[i]))
-        end for
-
-        items = []
-        for i = 0 to m.allItems.count() - 1
-            if m.searchNames[i].instr(query) <> -1 then items.push(m.allItems[i])
-        end for
-    end if
-
-    if m.playlistTypes.count() = playlistGrouping.Categories().count() then return items
+    if m.playlistTypes.count() = playlistGrouping.Categories().count() then return m.allItems
 
     ' Only playlists answer to the type checkboxes, anything else in the library stays
     shown = []
-    for each item in items
+    for each item in m.allItems
         json = item.json
         if not isValid(json) or not isStringEqual(json.LookupCI("Type"), "Playlist") or inArray(m.playlistTypes, playlistGrouping.CategoryOf(json, m.playlistCategories))
             shown.push(item)
@@ -1967,47 +1949,52 @@ function filteredItems() as object
     return shown
 end function
 
-' The server sorts on SortName, so a query is matched against that where it exists
-function sortableName(item as object) as string
-    name = chainLookupReturn(item, "json.SortName", "")
-    if not isValidAndNotEmpty(name) then name = chainLookupReturn(item, "json.Name", "")
-    return accentFolding.ForSearch(name)
-end function
-
+' Each letter would start a new search, so the server is only asked once typing pauses
 sub onSearchQueryChanged(event as object)
     m.searchQuery = event.getData()
     m.searchBox.query = m.searchQuery
-    applySearchFilter()
-    queueNextPage()
+    if not isValid(m.searchTimer) then m.searchTimer = pauseTimer("onSearchTimer")
+    m.searchTimer.control = "stop"
+    m.searchTimer.control = "start"
 end sub
 
-' Matching only sees the pages already fetched, so a query or a grouping that reaches past them
-' pulls the rest in a page at a time. Typing would restart that walk on every letter, so it waits
-' for a pause first.
-sub queueNextPage()
-    if isValid(m.searchPageTimer) then m.searchPageTimer.control = "stop"
-    if m.searchQuery.Trim() = "" and m.grouping = "" then return
+sub onSearchTimer()
+    query = m.searchQuery.Trim()
+    if query = m.loadItemsTask.searchTerm then return
 
-    if not isValid(m.searchPageTimer)
-        m.searchPageTimer = createObject("roSGNode", "Timer")
-        m.searchPageTimer.duration = 0.3
-        m.searchPageTimer.repeat = false
-        m.searchPageTimer.observeField("fire", "onSearchPageTimer")
-    end if
-    m.searchPageTimer.control = "start"
+    resetLoadedItems()
+    m.loadItemsTask.searchTerm = query
+    loadInitialItems()
+end sub
+
+function pauseTimer(handler as string) as object
+    timer = createObject("roSGNode", "Timer")
+    timer.duration = 0.3
+    timer.repeat = false
+    timer.observeField("fire", handler)
+    return timer
+end function
+
+sub queueNextPage()
+    if isValid(m.groupPageTimer) then m.groupPageTimer.control = "stop"
+    if m.grouping = "" then return
+
+    if not isValid(m.groupPageTimer) then m.groupPageTimer = pauseTimer("onGroupPageTimer")
+    m.groupPageTimer.control = "start"
 end sub
 
 sub clearSearchQuery()
     m.searchQuery = ""
     m.searchBox.query = ""
+    m.loadItemsTask.searchTerm = ""
 end sub
 
-sub onSearchPageTimer()
-    if m.searchQuery.Trim() = "" and m.grouping = "" then return
+sub onGroupPageTimer()
+    if m.grouping = "" then return
     ' The task is still winding down from the page it just handed over, and a running task ignores
     ' being run again
     if m.loadItemsTask.state = "run"
-        m.searchPageTimer.control = "start"
+        m.groupPageTimer.control = "start"
         return
     end if
     loadMoreData()
@@ -2059,11 +2046,10 @@ sub removeItem(itemId as string)
 
     focused = m.grid.itemFocused
     m.allItems = kept
-    m.searchNames = []
     m.loadedItems -= removed
     m.serverPosition -= removed
     m.loadItemsTask.totalRecordCount -= removed
-    applySearchFilter()
+    showLoadedItems()
 
     shown = m.grid.content
     if not isValid(shown) or m.groupLayout = "rows" then return
@@ -2740,14 +2726,17 @@ sub reclaimResources()
         m.loadItemsTask.content = []
     end if
 
+    if isValid(m.searchTimer) then m.searchTimer.control = "stop"
+    if isValid(m.groupPageTimer) then m.groupPageTimer.control = "stop"
+
     resetLoadedItems()
 
     m.genreData = createSGNode("ContentNode")
     m.genreGrid.content = m.genreData
 end sub
 
-' Items the search is hiding, and categories off screen, are in no list, so they are brought up
-' to date as well
+' Playlists of an unchecked type, and categories off screen, are in no list, so they are brought
+' up to date as well
 sub userDataApplied(changes as object)
     for each item in m.allItems
         userDataSync.ApplyToNode(item, changes)
