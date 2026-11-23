@@ -3698,5 +3698,9 @@
         <source>Decade (Year)</source>
         <translation>Årtionde</translation>
     </message>
+    <message>
+        <source>My Rating</source>
+        <translation>Mitt betyg</translation>
+    </message>
 </context>
 </TS>
