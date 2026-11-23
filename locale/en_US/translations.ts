@@ -11190,5 +11190,145 @@
         <extracomment>Stands in for a SyncPlay group that has no name</extracomment>
         <translation>SyncPlay Group</translation>
     </message>
+    <message>
+        <source>Because You Watched</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Because You Watched</translation>
+    </message>
+    <message>
+        <source>Continue Reading</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Continue Reading</translation>
+    </message>
+    <message>
+        <source>Hidden Gems</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Hidden Gems</translation>
+    </message>
+    <message>
+        <source>Next in Your Series</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Next in Your Series</translation>
+    </message>
+    <message>
+        <source>Profiles Like You Enjoyed</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Profiles Like You Enjoyed</translation>
+    </message>
+    <message>
+        <source>Random Picks</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Random Picks</translation>
+    </message>
+    <message>
+        <source>Recently Added Audiobooks</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Recently Added Audiobooks</translation>
+    </message>
+    <message>
+        <source>Recently Added Ebooks</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Recently Added Ebooks</translation>
+    </message>
+    <message>
+        <source>Recently Added in %1</source>
+        <extracomment>Title of a row a Silo server offers for Home, %1 is the name of a library on the server</extracomment>
+        <translation>Recently Added in %1</translation>
+    </message>
+    <message>
+        <source>Recently Added Manga</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Recently Added Manga</translation>
+    </message>
+    <message>
+        <source>Recently Added Movies</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Recently Added Movies</translation>
+    </message>
+    <message>
+        <source>Recently Added TV</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Recently Added TV</translation>
+    </message>
+    <message>
+        <source>Recently Released Audiobooks</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Recently Released Audiobooks</translation>
+    </message>
+    <message>
+        <source>Recently Released Ebooks</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Recently Released Ebooks</translation>
+    </message>
+    <message>
+        <source>Recently Released Episodes</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Recently Released Episodes</translation>
+    </message>
+    <message>
+        <source>Recently Released Episodes in %1</source>
+        <extracomment>Title of a row a Silo server offers for Home, %1 is the name of a library on the server</extracomment>
+        <translation>Recently Released Episodes in %1</translation>
+    </message>
+    <message>
+        <source>Recently Released in %1</source>
+        <extracomment>Title of a row a Silo server offers for Home, %1 is the name of a library on the server</extracomment>
+        <translation>Recently Released in %1</translation>
+    </message>
+    <message>
+        <source>Recently Released Manga</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Recently Released Manga</translation>
+    </message>
+    <message>
+        <source>Recently Released Movies</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Recently Released Movies</translation>
+    </message>
+    <message>
+        <source>Recommended for You</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Recommended for You</translation>
+    </message>
+    <message>
+        <source>Returning Shows</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Returning Shows</translation>
+    </message>
+    <message>
+        <source>Seasonal Picks</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Seasonal Picks</translation>
+    </message>
+    <message>
+        <source>Top Picks Today</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Top Picks Today</translation>
+    </message>
+    <message>
+        <source>Top Rated</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Top Rated</translation>
+    </message>
+    <message>
+        <source>Top Rated Movies</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Top Rated Movies</translation>
+    </message>
+    <message>
+        <source>Top Rated TV</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Top Rated TV</translation>
+    </message>
+    <message>
+        <source>Trending on Server</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Trending on Server</translation>
+    </message>
+    <message>
+        <source>Trending This Week</source>
+        <extracomment>Title of a row a Silo server offers for Home</extracomment>
+        <translation>Trending This Week</translation>
+    </message>
 </context>
 </TS>
