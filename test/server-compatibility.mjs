@@ -1327,8 +1327,12 @@ process.stdout.write('PASS: libraries individually wiring (11 checks)\n');
 // test connection keeps every flag sign in reads, the thumbs one among them
 const pluginApiSource = await readFile('source/api/MoonfinPlugin.bs', 'utf8');
 assert.match(pluginApiSource.match(/function InfoFromPing\([^]*?end function/)[0], /tmdbThumbsSupported: result\.tmdbThumbsSupported \?\? false/, 'The plugin record keeps the thumbs flag');
-const signInPing = (await readFile('source/utils/session.bs', 'utf8')).match(/sub CheckPluginStatus\(\)[^]*?end sub/)[0];
+const sessionSource = await readFile('source/utils/session.bs', 'utf8');
+const signInPing = sessionSource.match(/sub CheckPluginStatus\(\)[^]*?end sub/)[0];
 assert.match(signInPing, /pluginInfo = moonfinPlugin\.InfoFromPing\(result, displayName\)/, 'Sign in builds the plugin record with the shared builder');
+// Sign in reaches Seerr through the plugin's Quick Connect bridge once the synced settings are in
+assert.match(sessionSource, /settingsSync\.PullFromServer\(\)\s+session\.user\.SignInToSeerr\(\)/, 'Sign in tries Seerr after the settings sync');
+assert.match(sessionSource.match(/sub SignInToSeerr\(\)[^]*?end sub/)[0], /status\.authenticated <> false then return[^]*?"authType": "quickconnect"/, 'Only an account without a Seerr session goes through Quick Connect');
 const settingsPing = settingsSource.match(/sub onPluginPingComplete\(\)[^]*?end sub/)[0];
 assert.match(settingsPing, /pluginInfo = moonfinPlugin\.InfoFromPing\(result, displayName\)/, 'The connection test builds the same plugin record');
 assert.doesNotMatch(settingsPing, /tmdbAvailable:/, 'The connection test has no hand built copy of the record to fall behind');
