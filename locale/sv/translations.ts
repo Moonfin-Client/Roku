@@ -3702,5 +3702,9 @@
         <source>My Rating</source>
         <translation>Mitt betyg</translation>
     </message>
+    <message>
+        <source>Years</source>
+        <translation>Årtal</translation>
+    </message>
 </context>
 </TS>
