@@ -3714,5 +3714,17 @@
         <source>Play Count</source>
         <translation>Antal uppspelningar</translation>
     </message>
+    <message>
+        <source>Date Episode Added</source>
+        <translation>Datum avsnitt lades till</translation>
+    </message>
+    <message>
+        <source>CRITIC_RATING</source>
+        <translation>Kritikerbetyg</translation>
+    </message>
+    <message>
+        <source>Critic Rating</source>
+        <translation>Kritikerbetyg</translation>
+    </message>
 </context>
 </TS>
