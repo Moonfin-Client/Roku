@@ -1032,7 +1032,7 @@
     </message>
     <message>
         <source>Other</source>
-        <translation>Andra</translation>
+        <translation>Övrigt</translation>
     </message>
     <message>
         <source>Recommendations</source>
