@@ -6696,5 +6696,161 @@
         <source>Run setup again</source>
         <translation>Ejecutar la configuración otra vez</translation>
     </message>
+    <message>
+        <source>Hours</source>
+        <translation>Horas</translation>
+    </message>
+    <message>
+        <source>Hours watched</source>
+        <translation>Horas de Visualización</translation>
+    </message>
+    <message>
+        <source>Up and down to preview · OK to choose · Back twice to skip</source>
+        <translation>Arriba y abajo para previsualizar · OK para seleccionar · Retroceder dos veces para saltar</translation>
+    </message>
+    <message>
+        <source>The featured title opened up, with the next few lined up beside it.</source>
+        <translation>Se abrió el título destacado, con los siguientes alineados a su lado.</translation>
+    </message>
+    <message>
+        <source>The title centered over a full screen backdrop, with everything else down the page.</source>
+        <translation>El título se ubicaba en el centro sobre un fondo que ocupaba toda la pantalla, con el resto de la página en la parte inferior.</translation>
+    </message>
+    <message>
+        <source>The poster up front, with play under it and the details beside it.</source>
+        <translation>El cartel de la parte delantera, con la obra de teatro debajo y los detalles al lado.</translation>
+    </message>
+    <message>
+        <source>Streaming on</source>
+        <translation>Transmitiendo en</translation>
+    </message>
+    <message>
+        <source>The PIN on the server couldn&apos;t be cleared. If it&apos;s still set, ask a server administrator to remove it.</source>
+        <translation>No se pudo borrar el PIN del servidor. Si aún está configurado, pídale a un administrador del servidor que lo elimine.</translation>
+    </message>
+    <message>
+        <source>How far each press moves while scrubbing the progress bar</source>
+        <translation>Cuánto avanza o retrocede cada pulsación al desplazarse por la barra de progreso</translation>
+    </message>
+    <message>
+        <source>Thanksgiving</source>
+        <translation>Acción de gracias</translation>
+    </message>
+    <message>
+        <source>Streaming services</source>
+        <translation>Servicios de transmisión</translation>
+    </message>
+    <message>
+        <source>That didn&apos;t work. Try again in a moment.</source>
+        <translation>Eso no funcionó. Inténtalo de nuevo en un momento.</translation>
+    </message>
+    <message>
+        <source>Start a chat with a friend</source>
+        <translation>Iniciar un chat con un amigo</translation>
+    </message>
+    <message>
+        <source>Spring Petals</source>
+        <translation>Pétalos de Primavera</translation>
+    </message>
+    <message>
+        <source>This device syncs with the profile you pick until you pick another.</source>
+        <translation>Este dispositivo se sincroniza con el perfil que elijas hasta que selecciones otro.</translation>
+    </message>
+    <message>
+        <source>This device</source>
+        <translation>Este dispositivo</translation>
+    </message>
+    <message>
+        <source>Home Screen Backdrop</source>
+        <translation>Fondo Pantalla de Inicio</translation>
+    </message>
+    <message>
+        <source>Full Screen</source>
+        <translation>Pantalla Completa</translation>
+    </message>
+    <message>
+        <source>Corner</source>
+        <translation>Esquina</translation>
+    </message>
+    <message>
+        <source>STUDIOS</source>
+        <translation>STUDIOS</translation>
+    </message>
+    <message>
+        <source>The newest 100 songs</source>
+        <translation>Las 100 canciones más nuevas</translation>
+    </message>
+    <message>
+        <source>Unable to mark as complete</source>
+        <translation>Incapaz de marcar como completo</translation>
+    </message>
+    <message>
+        <source>The descriptions differ, so this may be a different program.</source>
+        <translation>Las descripciones difieren, por lo que podría tratarse de un programa diferente.</translation>
+    </message>
+    <message>
+        <source>The future showing will be recorded.</source>
+        <translation>La próxima proyección será grabada.</translation>
+    </message>
+    <message>
+        <source>Upcoming</source>
+        <translation>Próximamente</translation>
+    </message>
+    <message>
+        <source>Starts in</source>
+        <translation>Comienza en</translation>
+    </message>
+    <message>
+        <source>The calendar is limited to admins on this server.</source>
+        <translation>El calendario está restringido a los administradores de este servidor.</translation>
+    </message>
+    <message>
+        <source>Style, filters and actions for the calendar</source>
+        <translation>Estilo, filtros y acciones para el calendario</translation>
+    </message>
+    <message>
+        <source>Type tells episodes from movies. Status shows what&apos;s in your library, coming up or missing.</source>
+        <translation>El Tipo indica los episodios de las películas. El Estado muestra lo que hay en tu biblioteca, lo que está por venir o lo que falta.</translation>
+    </message>
+    <message>
+        <source>Spoiler safe</source>
+        <translation>A prueba de spoilers</translation>
+    </message>
+    <message>
+        <source>The server is restarting. Moonbase turns on once it&apos;s back.</source>
+        <translation>El servidor se está reiniciando. Moonbase se activará una vez que vuelva a estar operativo.</translation>
+    </message>
+    <message>
+        <source>Your own order for each collection</source>
+        <translation>Tu propio pedido para cada colección</translation>
+    </message>
+    <message>
+        <source>That PIN didn&apos;t work. Try again.</source>
+        <translation>Ese PIN no funcionó. Inténtalo de nuevo.</translation>
+    </message>
+    <message>
+        <source>You&apos;re the host now</source>
+        <translation>Eres el anfitrión ahora</translation>
+    </message>
+    <message>
+        <source>Start a watch party</source>
+        <translation>Organizar una fiesta para ver el partido</translation>
+    </message>
+    <message>
+        <source>Your watch party</source>
+        <translation>Tu grupo para ver el partido</translation>
+    </message>
+    <message>
+        <source>Starting together</source>
+        <translation>Comenzando juntos</translation>
+    </message>
+    <message>
+        <source>Start one or join one in progress</source>
+        <translation>Inicia uno o únete a uno que ya esté en marcha</translation>
+    </message>
+    <message>
+        <source>Start from the beginning</source>
+        <translation>Empezar desde el principio</translation>
+    </message>
 </context>
 </TS>
