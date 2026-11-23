@@ -3694,5 +3694,9 @@
         <source>Reviews</source>
         <translation>Omdömen</translation>
     </message>
+    <message>
+        <source>Decade (Year)</source>
+        <translation>Årtionde</translation>
+    </message>
 </context>
 </TS>
