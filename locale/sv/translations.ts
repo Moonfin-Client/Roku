@@ -2858,5 +2858,837 @@
         <source>Series recording is scheduled, but the guide has no upcoming episodes</source>
         <translation>Serien är schemalagd för inspelning, men i programguiden finns inga kommande avsnitt</translation>
     </message>
+    <message>
+        <source>Background Opacity</source>
+        <translation>Bakgrundsopacitet för detaljvy</translation>
+    </message>
+    <message>
+        <source>Loading Animation</source>
+        <translation>Laddningsanimation</translation>
+    </message>
+    <message>
+        <source>Peek Home Rows</source>
+        <translation>Peek-startsidor</translation>
+    </message>
+    <message>
+        <source>Show the top half of the first row along the bottom of the media bar</source>
+        <translation>Visa den övre halvan av den första raden längst ner på mediefältet</translation>
+    </message>
+    <message>
+        <source>Seasonal Row</source>
+        <translation>Säsongsrad</translation>
+    </message>
+    <message>
+        <source>New Year&apos;s</source>
+        <translation>Nyår</translation>
+    </message>
+    <message>
+        <source>Valentine&apos;s Day</source>
+        <translation>Alla hjärtans dag</translation>
+    </message>
+    <message>
+        <source>Easter</source>
+        <translation>Påsk</translation>
+    </message>
+    <message>
+        <source>Halloween</source>
+        <translation>Halloween</translation>
+    </message>
+    <message>
+        <source>Thanksgiving</source>
+        <translation>Tacksägelsedagen</translation>
+    </message>
+    <message>
+        <source>Christmas Movies</source>
+        <translation>Julfilmer</translation>
+    </message>
+    <message>
+        <source>Lunar New Year</source>
+        <translation>Det kinesiska nyåret</translation>
+    </message>
+    <message>
+        <source>Diwali</source>
+        <translation>Ljusfestivalen</translation>
+    </message>
+    <message>
+        <source>Library Order</source>
+        <translation>Biblioteksbeställning</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t save the library order</source>
+        <translation>Det gick inte att spara biblioteksbeställningen</translation>
+    </message>
+    <message>
+        <source>Sections</source>
+        <translation>Avsnitt</translation>
+    </message>
+    <message>
+        <source>Choose which parts of the Details screen to show</source>
+        <translation>Välj vilka delar av skärmen ”Detaljer” som ska visas</translation>
+    </message>
+    <message>
+        <source>Header</source>
+        <translation>Rubrik</translation>
+    </message>
+    <message>
+        <source>Person pages</source>
+        <translation>Personsidor</translation>
+    </message>
+    <message>
+        <source>Shows the title as text when off</source>
+        <translation>Visar titeln som text när den är avstängd</translation>
+    </message>
+    <message>
+        <source>Also on collection pages</source>
+        <translation>Även på samlingssidorna</translation>
+    </message>
+    <message>
+        <source>Directors &amp; writers</source>
+        <translation>Regissörer &amp; manusförfattare</translation>
+    </message>
+    <message>
+        <source>Also similar albums and artists</source>
+        <translation>Liknande album och artister</translation>
+    </message>
+    <message>
+        <source>On episode pages</source>
+        <translation>På avsnittssidorna</translation>
+    </message>
+    <message>
+        <source>Media info</source>
+        <translation>Medieinformation</translation>
+    </message>
+    <message>
+        <source>Version badge</source>
+        <translation>Versionsmärkning</translation>
+    </message>
+    <message>
+        <source>File, streams and Direct Play check</source>
+        <translation>Kontroll av filer, strömmar och Direct Play</translation>
+    </message>
+    <message>
+        <source>Genres &amp; tags</source>
+        <translation>Genrer &amp; taggar</translation>
+    </message>
+    <message>
+        <source>Streaming services</source>
+        <translation>Streamingtjänster</translation>
+    </message>
+    <message>
+        <source>Similar titles</source>
+        <translation>Liknande titlar</translation>
+    </message>
+    <message>
+        <source>Collection banner</source>
+        <translation>Samlingsbanner</translation>
+    </message>
+    <message>
+        <source>Crew credits</source>
+        <translation>Medverkande</translation>
+    </message>
+    <message>
+        <source>Birthplace</source>
+        <translation>Födelseort</translation>
+    </message>
+    <message>
+        <source>Guest appearances</source>
+        <translation>Gästframträdanden</translation>
+    </message>
+    <message>
+        <source>Music videos</source>
+        <translation>Musikvideor</translation>
+    </message>
+    <message>
+        <source>1 member</source>
+        <translation>1 medlem</translation>
+    </message>
+    <message>
+        <source>Density</source>
+        <translation>Densitet</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>Ljus</translation>
+    </message>
+    <message>
+        <source>Heavy</source>
+        <translation>Tung</translation>
+    </message>
+    <message>
+        <source>Focus Follower</source>
+        <translation>Focus Follower</translation>
+    </message>
+    <message>
+        <source>Transcode Audio Codecs</source>
+        <translation>Omkodning av ljudkodekar</translation>
+    </message>
+    <message>
+        <source>The server converts audio in these formats instead of sending it as is.</source>
+        <translation>Servern omvandlar ljud i dessa format istället för att skicka det som det är.</translation>
+    </message>
+    <message>
+        <source>This device syncs with the profile you pick until you pick another.</source>
+        <translation>Den här enheten synkroniseras med den profil du väljer tills du väljer en annan.</translation>
+    </message>
+    <message>
+        <source>Applies everywhere</source>
+        <translation>Gäller överallt</translation>
+    </message>
+    <message>
+        <source>Overrides Global</source>
+        <translation>Åsidosätter globala inställningar</translation>
+    </message>
+    <message>
+        <source>This device</source>
+        <translation>Denna enhet</translation>
+    </message>
+    <message>
+        <source>Load</source>
+        <translation>Ladda</translation>
+    </message>
+    <message>
+        <source>Server to this device</source>
+        <translation>Server till den här enheten</translation>
+    </message>
+    <message>
+        <source>Sync on</source>
+        <translation>Synkronisera på</translation>
+    </message>
+    <message>
+        <source>Sync off</source>
+        <translation>Synkronisering avstängd</translation>
+    </message>
+    <message>
+        <source>Choose and reorder what metadata the details screen shows</source>
+        <translation>Välj och ändra ordningen på vilka metadata som ska visas på informationsskärmen</translation>
+    </message>
+    <message>
+        <source>Combine separate libraries of the same type for Recently Added and Recently Released home rows.</source>
+        <translation>Slå ihop separata bibliotek av samma typ för raderna Nyligen tillagda och Nyligen släppta på startsidan.</translation>
+    </message>
+    <message>
+        <source>Customize how many action buttons appear before folding into the More Actions menu.</source>
+        <translation>Anpassa hur många åtgärdsknappar som ska visas innan de döljs i menyn ”Fler åtgärder”.</translation>
+    </message>
+    <message>
+        <source>Full Screen</source>
+        <translation>Helskärm</translation>
+    </message>
+    <message>
+        <source>How long a show stays in Next Up after you last watched it</source>
+        <translation>Hur länge ett program finns kvar i Next Up efter att du senast tittade på det</translation>
+    </message>
+    <message>
+        <source>Max days in Next Up</source>
+        <translation>Max antal dagar i ”Next Up”</translation>
+    </message>
+    <message>
+        <source>Only the sections the current Details screen style can show are listed. Hiding one hides it in every style that has it.</source>
+        <translation>Endast de avsnitt som kan visas i den aktuella utformningen av detaljskärmen visas i listan. Om du döljer ett avsnitt döljs det i alla utformningar där det förekommer.</translation>
+    </message>
+    <message>
+        <source>Row Padding</source>
+        <translation>Radavstånd</translation>
+    </message>
+    <message>
+        <source>Show the Seerr status on posters and seasons across the app</source>
+        <translation>Visa Seerr-statusen på affischer och säsonger i hela appen</translation>
+    </message>
+    <message>
+        <source>Badge Style</source>
+        <translation>Emblemstil</translation>
+    </message>
+    <message>
+        <source>Badge puts Seerr&apos;s dot in a corner. Banner runs the status across the top of the poster.</source>
+        <translation>Badgen placerar Seerrs prick i ett hörn. Bannern visar statusen längs affischens överkant.</translation>
+    </message>
+    <message>
+        <source>Choose what the Radarr and Sonarr rows show.</source>
+        <translation>Välj vad som ska visas i Radarr- och Sonarr-raderna.</translation>
+    </message>
+    <message>
+        <source>Genres and Studios</source>
+        <translation>Genrer och studior</translation>
+    </message>
+    <message>
+        <source>Artist</source>
+        <translation>Konstnär</translation>
+    </message>
+    <message>
+        <source>Playlist order</source>
+        <translation>Spellistans ordning</translation>
+    </message>
+    <message>
+        <source>Jump to letter</source>
+        <translation>Gå till bokstaven</translation>
+    </message>
+    <message>
+        <source>Preferred Secondary Subtitle Language</source>
+        <translation>Önskat språk för undertexter (alternativ)</translation>
+    </message>
+    <message>
+        <source>Downloaded, waiting for import</source>
+        <translation>Hämtad, väntar på import</translation>
+    </message>
+    <message>
+        <source>A to Z</source>
+        <translation>A till Z</translation>
+    </message>
+    <message>
+        <source>Show Libraries Individually</source>
+        <translation>Visa bibliotek ett i taget</translation>
+    </message>
+    <message>
+        <source>Show each library as its own button in the navigation bar instead of in the Libraries menu</source>
+        <translation>Visa varje bibliotek som en egen knapp i navigeringsfältet istället för i menyn ”Bibliotek”</translation>
+    </message>
+    <message>
+        <source>Series Continuing · Future Seasons Can Be Requested</source>
+        <translation>Serien fortsätter · Framtida säsonger kan beställas</translation>
+    </message>
+    <message>
+        <source>Requested by</source>
+        <translation>På begäran av</translation>
+    </message>
+    <message>
+        <source>Secondary Subtitles</source>
+        <translation>Sekundära undertexter</translation>
+    </message>
+    <message>
+        <source>Show a second subtitle track at the same time. The subtitle menu then asks for the primary or secondary track first</source>
+        <translation>Visa ett andra undertextspår samtidigt. I undertextmenyn frågas man då först vilket spår som ska vara det primära och vilket det sekundära.</translation>
+    </message>
+    <message>
+        <source>New Release Banner</source>
+        <translation>Banner för ny release</translation>
+    </message>
+    <message>
+        <source>30 days</source>
+        <translation>30 dygn</translation>
+    </message>
+    <message>
+        <source>Watching on MDBList</source>
+        <translation>Tittar på MDBList</translation>
+    </message>
+    <message>
+        <source>{users} watching now · {movies} movies · {shows} shows</source>
+        <translation>{users} tittar just nu · {movies} filmer · {shows} shows</translation>
+    </message>
+    <message>
+        <source>{users} watched today · {movies} movies · {shows} shows</source>
+        <translation>{users} såg idag · {movies} filmer · {shows} shows</translation>
+    </message>
+    <message>
+        <source>Digital</source>
+        <translation>Digitalt</translation>
+    </message>
+    <message>
+        <source>Physical</source>
+        <translation>Fysisk</translation>
+    </message>
+    <message>
+        <source>Radarr Calendar</source>
+        <translation>Radarr kalendern</translation>
+    </message>
+    <message>
+        <source>Sonarr Calendar</source>
+        <translation>Sonarr Kalendern</translation>
+    </message>
+    <message>
+        <source>Stalled</source>
+        <translation>Fastnat</translation>
+    </message>
+    <message>
+        <source>Download failed</source>
+        <translation>Nedladdningen misslyckades</translation>
+    </message>
+    <message>
+        <source>Import blocked</source>
+        <translation>Importen har blockerats</translation>
+    </message>
+    <message>
+        <source>Not found yet</source>
+        <translation>Har inte hittats ännu</translation>
+    </message>
+    <message>
+        <source>Get a different release</source>
+        <translation>Hämta en annan version</translation>
+    </message>
+    <message>
+        <source>Hide watched content from Recently Added and Recently Released home rows.</source>
+        <translation>Dölj visat innehåll från raderna Nyligen tillagda och Nyligen släppta på startsidan.</translation>
+    </message>
+    <message>
+        <source>Action Buttons</source>
+        <translation>Åtgärdsknappar</translation>
+    </message>
+    <message>
+        <source>Aya</source>
+        <translation>Aya</translation>
+    </message>
+    <message>
+        <source>Bookshelf</source>
+        <translation>Bokhylla</translation>
+    </message>
+    <message>
+        <source>What selecting a Continue Watching or Next Up item does</source>
+        <translation>Vad som händer när man väljer ett alternativ under ”Fortsätt titta” eller ”Nästa”</translation>
+    </message>
+    <message>
+        <source>Go to Details</source>
+        <translation>Gå till detaljer</translation>
+    </message>
+    <message>
+        <source>Play immediately</source>
+        <translation>Spela direkt</translation>
+    </message>
+    <message>
+        <source>Record Series</source>
+        <translation>Rekordserie</translation>
+    </message>
+    <message>
+        <source>1 fact</source>
+        <translation>1 faktum</translation>
+    </message>
+    <message>
+        <source>Genres and Tags</source>
+        <translation>Genrer och taggar</translation>
+    </message>
+    <message>
+        <source>Streaming on</source>
+        <translation>Streaming på</translation>
+    </message>
+    <message>
+        <source>Seerr Availability</source>
+        <translation>Seerrs tillgänglighet</translation>
+    </message>
+    <message>
+        <source>4 digits</source>
+        <translation>4 siffror</translation>
+    </message>
+    <message>
+        <source>20 seconds</source>
+        <translation>20 sekunder</translation>
+    </message>
+    <message>
+        <source>Chapter Marks</source>
+        <translation>Kapitelmarkeringar</translation>
+    </message>
+    <message>
+        <source>Mark where each chapter starts on the seek bar</source>
+        <translation>Markera var varje kapitel börjar på sökreglaget</translation>
+    </message>
+    <message>
+        <source>Light Gray</source>
+        <translation>Ljusgrå</translation>
+    </message>
+    <message>
+        <source>Dark Gray</source>
+        <translation>Mörkgrå</translation>
+    </message>
+    <message>
+        <source>1 download</source>
+        <translation>1 ladda</translation>
+    </message>
+    <message>
+        <source>Trailer Captions</source>
+        <translation>Undertexter till trailern</translation>
+    </message>
+    <message>
+        <source>Choose the order of your libraries</source>
+        <translation>Välj i vilken ordning dina bibliotek ska visas</translation>
+    </message>
+    <message>
+        <source>Your libraries appear in this order on My Media, the recently added rows and the navigation bar. The order is saved to your server account, so other apps you sign in to use it too.</source>
+        <translation>Dina bibliotek visas i den här ordningen på ”Mina medier”, i raderna med nyligen tillagda objekt och i navigeringsfältet. Ordningen sparas på ditt serverkonto, så andra appar som du loggar in på använder den också.</translation>
+    </message>
+    <message>
+        <source>Press left or right to move the highlighted library.</source>
+        <translation>Tryck åt vänster eller höger för att flytta det markerade biblioteket.</translation>
+    </message>
+    <message>
+        <source>1 waiting for you</source>
+        <translation>1 väntar på dig</translation>
+    </message>
+    <message>
+        <source>Christmas</source>
+        <translation>Jul</translation>
+    </message>
+    <message>
+        <source>Spring Petals</source>
+        <translation>Vårens blomblad</translation>
+    </message>
+    <message>
+        <source>Fireflies</source>
+        <translation>Tulikärpäset</translation>
+    </message>
+    <message>
+        <source>This device to server</source>
+        <translation>Denna enhet till servern</translation>
+    </message>
+    <message>
+        <source>Choose which buttons the details screen shows</source>
+        <translation>Välj vilka knappar som ska visas i detaljvyn</translation>
+    </message>
+    <message>
+        <source>Choose which buttons the player shows</source>
+        <translation>Välj vilka knappar spelaren visar</translation>
+    </message>
+    <message>
+        <source>Show Text</source>
+        <translation>Visa text</translation>
+    </message>
+    <message>
+        <source>Show captions on YouTube trailers</source>
+        <translation>Visa undertexter i YouTube-trailers</translation>
+    </message>
+    <message>
+        <source>Badge</source>
+        <translation>Märke</translation>
+    </message>
+    <message>
+        <source>Cinema</source>
+        <translation>Bio</translation>
+    </message>
+    <message>
+        <source>Hide Watched</source>
+        <translation>Dölj visade</translation>
+    </message>
+    <message>
+        <source>Album Artist</source>
+        <translation>Album Artist</translation>
+    </message>
+    <message>
+        <source>Random</source>
+        <translation>Slumpmässigt</translation>
+    </message>
+    <message>
+        <source>Video Library Style</source>
+        <translation>Stil för videobiblioteket</translation>
+    </message>
+    <message>
+        <source>Show</source>
+        <translation>Visa</translation>
+    </message>
+    <message>
+        <source>Music Library Style</source>
+        <translation>Musikbibliotekets stil</translation>
+    </message>
+    <message>
+        <source>Quick Access</source>
+        <translation>Snabbtillgång</translation>
+    </message>
+    <message>
+        <source>Immersive</source>
+        <translation>Fängslande</translation>
+    </message>
+    <message>
+        <source>Jump Back In</source>
+        <translation>Kom tillbaka</translation>
+    </message>
+    <message>
+        <source>From This Album</source>
+        <translation>Från detta album</translation>
+    </message>
+    <message>
+        <source>Search Music</source>
+        <translation>Sök efter musik</translation>
+    </message>
+    <message>
+        <source>Release Year</source>
+        <translation>Utgivningsår</translation>
+    </message>
+    <message>
+        <source>Library View</source>
+        <translation>Biblioteksvy</translation>
+    </message>
+    <message>
+        <source>Tomorrow</source>
+        <translation>I morgon</translation>
+    </message>
+    <message>
+        <source>1 chapter</source>
+        <translation>1 kapitel</translation>
+    </message>
+    <message>
+        <source>1 extra</source>
+        <translation>1 extra</translation>
+    </message>
+    <message>
+        <source>1 collection</source>
+        <translation>1 samling</translation>
+    </message>
+    <message>
+        <source>1 person</source>
+        <translation>1 person</translation>
+    </message>
+    <message>
+        <source>1 studio</source>
+        <translation>1 studio</translation>
+    </message>
+    <message>
+        <source>1 track</source>
+        <translation>1 spår</translation>
+    </message>
+    <message>
+        <source>1 album</source>
+        <translation>1 album</translation>
+    </message>
+    <message>
+        <source>1 movie</source>
+        <translation>1 film</translation>
+    </message>
+    <message>
+        <source>1 show</source>
+        <translation>1 show</translation>
+    </message>
+    <message>
+        <source>1 title</source>
+        <translation>1 titel</translation>
+    </message>
+    <message>
+        <source>1 season</source>
+        <translation>1 säsong</translation>
+    </message>
+    <message>
+        <source>1 episode</source>
+        <translation>1 episod</translation>
+    </message>
+    <message>
+        <source>Show Missing Collection Items</source>
+        <translation>Visa saknade objekt i samlingen</translation>
+    </message>
+    <message>
+        <source>Include missing items on Collection pages</source>
+        <translation>Lägg till saknade artiklar på samlingssidorna</translation>
+    </message>
+    <message>
+        <source>Action Buttons on Screen</source>
+        <translation>Åtgärdsknappar på skärmen</translation>
+    </message>
+    <message>
+        <source>Auto (Theme Default)</source>
+        <translation>Auto (standardinställning för temat)</translation>
+    </message>
+    <message>
+        <source>1 (Play only)</source>
+        <translation>1 (Endast uppspelning)</translation>
+    </message>
+    <message>
+        <source>All (Horizontal Scroll)</source>
+        <translation>Alla (horisontell rullning)</translation>
+    </message>
+    <message>
+        <source>PIN synced</source>
+        <translation>PIN-kod synkroniserad</translation>
+    </message>
+    <message>
+        <source>Show Live TV Button</source>
+        <translation>Knappen ”Visa direktsänd TV”</translation>
+    </message>
+    <message>
+        <source>Pause While Scrubbing</source>
+        <translation>Paus under skrubbning</translation>
+    </message>
+    <message>
+        <source>Playback pauses while you seek and resumes when you press play. Turn this off to keep playing and jump straight to the new spot</source>
+        <translation>Uppspelningen pausas medan du söker och återupptas när du trycker på uppspelningsknappen. Stäng av den här funktionen för att fortsätta uppspelningen och hoppa direkt till den nya platsen</translation>
+    </message>
+    <message>
+        <source>Middle</source>
+        <translation>Mitten</translation>
+    </message>
+    <message>
+        <source>Blue</source>
+        <translation>Blå</translation>
+    </message>
+    <message>
+        <source>Magenta</source>
+        <translation>Magenta</translation>
+    </message>
+    <message>
+        <source>Semi-transparent White</source>
+        <translation>Halvgenomskinligt vitt</translation>
+    </message>
+    <message>
+        <source>Customize the loading animations used throughout Moonfin</source>
+        <translation>Anpassa de laddningsanimationer som används i hela Moonfin</translation>
+    </message>
+    <message>
+        <source>Loading Animation Configuration</source>
+        <translation>Konfiguration av laddningsanimation</translation>
+    </message>
+    <message>
+        <source>Image</source>
+        <translation>Bild</translation>
+    </message>
+    <message>
+        <source>Moonfin Logo</source>
+        <translation>Moonfin logotypen</translation>
+    </message>
+    <message>
+        <source>Spinner</source>
+        <translation>Spinner</translation>
+    </message>
+    <message>
+        <source>Runner</source>
+        <translation>Löpare</translation>
+    </message>
+    <message>
+        <source>Neonfin Phases</source>
+        <translation>Neonfins faser</translation>
+    </message>
+    <message>
+        <source>Animation Size</source>
+        <translation>Animationens storlek</translation>
+    </message>
+    <message>
+        <source>Animation Position</source>
+        <translation>Animationsposition</translation>
+    </message>
+    <message>
+        <source>Top-Left</source>
+        <translation>Övre vänstra hörnet</translation>
+    </message>
+    <message>
+        <source>Top-Center</source>
+        <translation>Övre mitten</translation>
+    </message>
+    <message>
+        <source>Top-Right</source>
+        <translation>Övre högra hörnet</translation>
+    </message>
+    <message>
+        <source>Middle-Left</source>
+        <translation>Mitten-vänster</translation>
+    </message>
+    <message>
+        <source>Middle-Right</source>
+        <translation>Mitten-höger</translation>
+    </message>
+    <message>
+        <source>Bottom-Left</source>
+        <translation>Nederst till vänster</translation>
+    </message>
+    <message>
+        <source>Bottom-Center</source>
+        <translation>Längst ner i mitten</translation>
+    </message>
+    <message>
+        <source>Bottom-Right</source>
+        <translation>Nederst till höger</translation>
+    </message>
+    <message>
+        <source>Animation Speed</source>
+        <translation>Animationshastighet</translation>
+    </message>
+    <message>
+        <source>Slow</source>
+        <translation>Långsamt</translation>
+    </message>
+    <message>
+        <source>Moderate</source>
+        <translation>Måttlig</translation>
+    </message>
+    <message>
+        <source>Fast</source>
+        <translation>Snabbt</translation>
+    </message>
+    <message>
+        <source>Ultra</source>
+        <translation>Ultra</translation>
+    </message>
+    <message>
+        <source>Pride</source>
+        <translation>Stolthet</translation>
+    </message>
+    <message>
+        <source>1 unread message</source>
+        <translation>1 oläst meddelande</translation>
+    </message>
+    <message>
+        <source>A holiday piece, like Halloween&apos;s planchette, follows what you select on Home</source>
+        <translation>Ett högtidsinslag, som planchettan till Halloween, följer det du väljer på startsidan</translation>
+    </message>
+    <message>
+        <source>Customize padding between home rows</source>
+        <translation>Anpassa avståndet mellan hemraderna</translation>
+    </message>
+    <message>
+        <source>Seerr Discover Sliders</source>
+        <translation>Seerr Discover reglage</translation>
+    </message>
+    <message>
+        <source>How long after an episode airs it still counts as new.</source>
+        <translation>Hur länge efter att ett avsnitt har sänts räknas det fortfarande som nytt?</translation>
+    </message>
+    <message>
+        <source>New Series</source>
+        <translation>Ny serie</translation>
+    </message>
+    <message>
+        <source>New Season</source>
+        <translation>Ny säsong</translation>
+    </message>
+    <message>
+        <source>New Episodes</source>
+        <translation>Nya avsnitt</translation>
+    </message>
+    <message>
+        <source>{count} watching</source>
+        <translation>{count} tittar på</translation>
+    </message>
+    <message>
+        <source>Radarr and Sonarr Calendars</source>
+        <translation>Radarr- och Sonarr-kalendrar</translation>
+    </message>
+    <message>
+        <source>Hide Movies Already on the Server</source>
+        <translation>Dölj filmer som redan finns på servern</translation>
+    </message>
+    <message>
+        <source>Hide Episodes Already on the Server</source>
+        <translation>Dölj avsnitt som redan finns på servern</translation>
+    </message>
+    <message>
+        <source>Poster Labels</source>
+        <translation>Etiketter för affischer</translation>
+    </message>
+    <message>
+        <source>Show the labels on posters, such as 4K or HDR.</source>
+        <translation>Visa märkningarna på affischerna, till exempel 4K eller HDR.</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t remove the download</source>
+        <translation>Det gick inte att ta bort nedladdningen</translation>
+    </message>
+    <message>
+        <source>Gallery</source>
+        <translation>Galleri</translation>
+    </message>
+    <message>
+        <source>Default Action</source>
+        <translation>Standardåtgärd</translation>
+    </message>
+    <message>
+        <source>Instant Mix</source>
+        <translation>Instant Mix</translation>
+    </message>
+    <message>
+        <source>Stats</source>
+        <translation>Statistik</translation>
+    </message>
+    <message>
+        <source>Moon Phases</source>
+        <translation>Månfaser</translation>
+    </message>
+    <message>
+        <source>Moonfin Phases</source>
+        <translation>Moonfin-faser</translation>
+    </message>
+    <message>
+        <source>On person pages</source>
+        <translation>På personsidor</translation>
+    </message>
 </context>
 </TS>
