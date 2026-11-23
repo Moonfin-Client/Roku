@@ -79,6 +79,75 @@ function personalRatingStyle() as string
     return "thumbs"
 end function
 
+function effectivePersonalRatingIntervals(style as string, configured as integer) as integer
+    if style = "stars"
+        if configured = 6 then return 6
+        if configured = 21 or configured = 41 then return 21
+        return 11
+    else if style = "numeric"
+        if configured = 21 then return 21
+        if configured = 41 then return 41
+        return 11
+    end if
+    return 11
+end function
+
+function personalRatingIntervals(style = "" as string) as integer
+    activeStyle = style <> "" ? style : personalRatingStyle()
+    raw = chainLookupReturn(m.global.session, "user.settings.`ui.itemdetail.personalRatingIntervals`", "11")
+    configured = Val(raw.toStr())
+    return effectivePersonalRatingIntervals(activeStyle, Int(configured))
+end function
+
+function personalRatingServerStep(style as string, intervals as integer) as float
+    effective = effectivePersonalRatingIntervals(style, intervals)
+    return 10.0 / (effective - 1)
+end function
+
+function personalRatingMaxDecimals(style as string, intervals as integer) as integer
+    effective = effectivePersonalRatingIntervals(style, intervals)
+    if style = "stars"
+        if effective = 6 then return 0
+        if effective = 11 then return 1
+        return 2
+    else if style = "numeric"
+        if effective = 11 then return 0
+        if effective = 21 then return 1
+        return 2
+    end if
+    return 0
+end function
+
+function snapPersonalRatingToGrid(rating as float, style as string, intervals as integer) as float
+    stepSize = personalRatingServerStep(style, intervals)
+    clamped = rating
+    if clamped < 0.0 then clamped = 0.0
+    if clamped > 10.0 then clamped = 10.0
+    snapped = Int((clamped / stepSize) + 0.5) * stepSize
+    if snapped < 0.0 then snapped = 0.0
+    if snapped > 10.0 then snapped = 10.0
+    return Int((snapped * 100.0) + 0.5) / 100.0
+end function
+
+function formatPersonalRatingNumber(value as float, maxDecimals as integer) as string
+    if maxDecimals <= 0
+        return Int(value + 0.5).toStr()
+    end if
+    factor = maxDecimals = 1 ? 10 : 100
+    scaled = Int((value * factor) + 0.5)
+    whole = Int(scaled / factor)
+    frac = scaled mod factor
+    if frac = 0 then return whole.toStr()
+    if maxDecimals = 1
+        return `${whole.toStr()}.${frac.toStr()}`
+    end if
+    if (frac mod 10) = 0
+        return `${whole.toStr()}.${Int(frac / 10).toStr()}`
+    end if
+    fracStr = frac < 10 ? `0${frac.toStr()}` : frac.toStr()
+    return `${whole.toStr()}.${fracStr}`
+end function
+
 function savedRating(itemData as object) as dynamic
     return chainLookupReturn(itemData, "UserData.Rating", invalid)
 end function
@@ -95,6 +164,7 @@ end function
 
 function ratingButtonConfig(itemData as object) as object
     style = personalRatingStyle()
+    intervals = personalRatingIntervals(style)
 
     icon = "pkg:/images/icons/rating_star.webp"
     if style = "numeric" then icon = "pkg:/images/icons/rating_numbers.webp"
@@ -107,40 +177,56 @@ function ratingButtonConfig(itemData as object) as object
     else
         rating = savedRating(itemData)
         if isValid(rating)
-            label = style = "stars" ? starLabel(rating) : tr("Rated")
+            label = style = "stars" ? starLabel(rating, intervals) : tr("Rated")
         end if
     end if
 
     return { icon: icon, label: label, action: "personalRating", id: "personalRatingButton" }
 end function
 
-' Full stars with a half added when the remainder is close enough to earn one
-function starLabel(rating as float) as string
-    stars = rating / 2
-    full = Int(stars)
+' Full stars with a fraction glyph matching the configured star interval
+function starLabel(rating as float, intervals = 11 as integer) as string
+    effective = effectivePersonalRatingIntervals("stars", intervals)
+    snappedStars = snapPersonalRatingToGrid(rating, "stars", effective) / 2.0
+    subdivisions = effective = 6 ? 1 : (effective = 11 ? 2 : 4)
+    snappedUnits = Int((snappedStars * subdivisions) + 0.5)
+    if snappedUnits <= 0 then return "0 / 5"
+
+    full = Int(snappedUnits / subdivisions)
+    remainder = snappedUnits mod subdivisions
 
     label = ""
     for i = 1 to full
         label += "★"
     end for
-    if stars - full >= 0.25 then label += "½"
+    if subdivisions = 2 and remainder = 1
+        label += "½"
+    else if subdivisions = 4
+        if remainder = 1
+            label += "¼"
+        else if remainder = 2
+            label += "½"
+        else if remainder = 3
+            label += "¾"
+        end if
+    end if
 
-    if label = "" then return tr("Rate")
+    if label = "" then return "0 / 5"
     return label
 end function
 
-' The scores run from ten down to one, so a saved score sits that many rows in
-function markedRatingIndex(rating as dynamic) as integer
+' The scores run from ten down to zero on the active interval grid
+function markedRatingIndex(rating as dynamic, style = "numeric" as string, intervals = 11 as integer) as integer
     if not isValid(rating) then return -1
-    whole = Int(rating + 0.5)
-    if whole < 1 or whole > 10 then return -1
-    if Abs(rating - whole) > 0.01 then return -1
-    return 10 - whole
+    stepSize = personalRatingServerStep(style, intervals)
+    snapped = snapPersonalRatingToGrid(rating * 1.0, style, intervals)
+    return Int(((10.0 - snapped) / stepSize) + 0.5)
 end function
 
 sub showRatingPrompt()
     itemData = m.top.itemContent.json
     style = personalRatingStyle()
+    intervals = personalRatingIntervals(style)
 
     options = []
     m.ratingChoices = []
@@ -154,11 +240,24 @@ sub showRatingPrompt()
         m.ratingChoices.push({ kind: "likes", value: false })
         if isValid(likes) then marked = likes ? 0 : 1
     else
-        for score = 10 to 1 step -1
-            options.push(style = "stars" ? starLabel(score * 1.0) : score.toStr())
-            m.ratingChoices.push({ kind: "rating", value: score * 1.0 })
+        effective = effectivePersonalRatingIntervals(style, intervals)
+        stepSize = personalRatingServerStep(style, effective)
+        maxDecimals = personalRatingMaxDecimals(style, effective)
+        isSilo = isSiloServer(toString(chainLookupReturn(itemData, "_serverUrl", "")))
+        for i = 0 to effective - 1
+            score = Int(((10.0 - (i * stepSize)) * 100.0) + 0.5) / 100.0
+            if score < 0.0 then score = 0.0
+            if isSilo and score <= 0.0 then continue for
+            if style = "stars"
+                choiceLabel = score <= 0.0 ? "0 / 5" : starLabel(score, effective)
+            else
+                choiceLabel = formatPersonalRatingNumber(score, maxDecimals)
+            end if
+            options.push(choiceLabel)
+            m.ratingChoices.push({ kind: "rating", value: score })
         end for
-        marked = markedRatingIndex(savedRating(itemData))
+        marked = markedRatingIndex(savedRating(itemData), style, effective)
+        if marked >= options.count() then marked = -1
     end if
 
     if isValid(savedLikes(itemData)) or isValid(savedRating(itemData))
