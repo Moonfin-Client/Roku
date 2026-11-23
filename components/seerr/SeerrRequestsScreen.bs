@@ -1,3 +1,4 @@
+import "pkg:/source/enums/ColorPalette.bs"
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/utils/misc.bs"
@@ -62,6 +63,12 @@ sub init()
     m.hydrationExpected = 0
     m.loadGeneration = 0
     m.listTask.addField("generation", "integer", false)
+    m.staleListTasks = []
+    ' While a cancel or remove waits on Silo, the start of the earliest page that landed meanwhile,
+    ' or -1. Silo may have dropped the request before that page read the list
+    m.removalOut = false
+    m.pageDuringRemoval = -1
+    m.pageSkip = 0
     ' Each title's queue, kept across reloads, as "movie:603" or "tv:1399"
     m.arrQueues = {}
     m.arrPending = []
@@ -221,6 +228,9 @@ sub reload()
     m.gridStop = 0
     m.hasMore = true
     m.loadingMore = false
+    ' A removal still out belongs to the old list, whose pages are gone
+    m.removalOut = false
+    m.pageDuringRemoval = -1
     activeList().content = invalid
 
     showState(tr("Loading requests..."), false)
@@ -237,9 +247,20 @@ sub requestPage(skip as integer)
         params = { filter: m.requestFilter, take: PAGE_SIZE.toStr(), skip: skip.toStr(), sort: "added" }
     end if
 
-    m.listTask.generation = m.loadGeneration
-    m.listTask.request = { method: "GET", endpoint: endpoint, queryParams: params }
+    ' A fresh task each time: a RUN on a task still running starts nothing, and setting its
+    ' generation would let its old page through. One still out is held so it isn't dropped mid-call
     m.listTask.unobserveField("response")
+    stillOut = []
+    for each task in m.staleListTasks
+        if task.state = "run" then stillOut.push(task)
+    end for
+    if m.listTask.state = "run" then stillOut.push(m.listTask)
+    m.staleListTasks = stillOut
+    m.listTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.listTask.addField("generation", "integer", false)
+    m.listTask.generation = m.loadGeneration
+    m.pageSkip = skip
+    m.listTask.request = { method: "GET", endpoint: endpoint, queryParams: params }
     m.listTask.observeField("response", "onPageLoaded")
     m.listTask.control = TaskControl.RUN
 end sub
@@ -350,6 +371,7 @@ sub settleHydration()
 end sub
 
 sub finishPage()
+    if m.removalOut and m.pageSkip > 0 and (m.pageDuringRemoval < 0 or m.pageSkip < m.pageDuringRemoval) then m.pageDuringRemoval = m.pageSkip
     m.hydrationExpected = 0
     m.hydrationTasks = []
 
@@ -510,13 +532,16 @@ function requesterSplits() as boolean
 end function
 
 ' A moderator answers a pending request or sends a failed one again, and anyone else can take
-' back their own pending one
+' back their own pending one. Silo also lets a failed request that delivered nothing be removed
 function requestActions(entry as object) as object
     status = chainLookupReturn(entry, "status", 0)
     if status = SEERR_REQUEST_PENDING and m.canManageRequests then return ["approve", "decline"]
     if status = SEERR_REQUEST_PENDING and m.seerrUserId > 0 and chainLookupReturn(entry, "requestedBy.id", -1) = m.seerrUserId then return ["cancel"]
-    if status = SEERR_REQUEST_FAILED and m.canManageRequests then return ["retry"]
-    return []
+    if status <> SEERR_REQUEST_FAILED then return []
+    actions = []
+    if m.canManageRequests then actions.push("retry")
+    if entry.canRemove = true then actions.push("remove")
+    return actions
 end function
 
 sub onListItemFocused(event as object)
@@ -640,12 +665,67 @@ sub openActiveMedia()
     })
 end sub
 
-' Answered straight from the button, with no confirm first
+' Answered straight from the button, with no confirm first, except Remove, which deletes the
+' request for good
 sub runRequestAction(action as string)
     requestId = chainLookupReturn(m.activeItem, "id", invalid)
     if not isValid(requestId) then return
+    if action = "remove"
+        confirmRemove()
+        return
+    end if
+    sendRequestAction(action)
+end sub
+
+sub confirmRemove()
+    title = Chr(34) + SeerrMediaTitle(chainLookupReturn(m.activeItem, "media", invalid)) + Chr(34)
+    ' An admin can remove anyone's failed request, so the confirm says whose it is when it isn't theirs
+    message = Substitute(tr("Your failed request for ^0 will be deleted. You can request it again later."), title)
+    if chainLookupReturn(m.activeItem, "requestedByViewer", true) = false
+        name = SeerrRequesterName(m.activeItem)
+        if name = tr("Unknown")
+            message = Substitute(tr("Another user's failed request for ^0 will be deleted. They can request it again later."), title)
+        else
+            message = Substitute(tr("The failed request for ^0 by ^1 will be deleted. They can request it again later."), title, name)
+        end if
+    end if
+    m.removeDialog = CreateObject("roSGNode", "StandardMessageDialog")
+    ' The user's dialog colors, as SceneManager's optionDialog sets them
+    palette = CreateObject("roSGNode", "RSGPalette")
+    palette.colors = {
+        DialogBackgroundColor: chainLookupReturn(m.global.session, "user.settings.colorDialogBackground", ColorPalette.ELEMENTBACKGROUND),
+        DialogFocusColor: chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT),
+        DialogFocusItemColor: chainLookupReturn(m.global.session, "user.settings.colorDialogSelectedText", ColorPalette.WHITE),
+        DialogSecondaryItemColor: chainLookupReturn(m.global.session, "user.settings.colorDialogBorderLine", ColorPalette.LIGHTBLUE),
+        DialogTextColor: chainLookupReturn(m.global.session, "user.settings.colorDialogText", ColorPalette.WHITE)
+    }
+    m.removeDialog.palette = palette
+    m.removeDialog.title = tr("Remove Request")
+    m.removeDialog.message = [message]
+    m.removeDialog.buttons = [tr("Keep"), tr("Remove Request")]
+    m.removeDialog.observeField("buttonSelected", "onRemoveDialogButton")
+    m.removeDialog.observeField("wasClosed", "onRemoveDialogClosed")
+    m.top.getScene().dialog = m.removeDialog
+end sub
+
+sub onRemoveDialogButton(event as object)
+    confirmed = event.getData() = 1
+    m.removeDialog.close = true
+    if confirmed then sendRequestAction("remove")
+end sub
+
+sub onRemoveDialogClosed()
+    m.removeDialog = invalid
+    m.gridFocus.setFocus(true)
+    lightTile(true)
+end sub
+
+sub sendRequestAction(action as string)
+    requestId = chainLookupReturn(m.activeItem, "id", invalid)
 
     m.pendingAction = action
+    m.removalOut = action = "cancel" or action = "remove"
+    m.pageDuringRemoval = -1
     endpoint = `/api/v1/request/${requestId.toStr()}`
     request = { method: "DELETE", endpoint: endpoint }
     if action <> "cancel" then request = { method: "POST", endpoint: `${endpoint}/${action}` }
@@ -659,9 +739,22 @@ end sub
 
 sub onRequestActionDone(event as object)
     response = event.getData()
+    landed = m.pageDuringRemoval
+    m.removalOut = false
+    m.pageDuringRemoval = -1
 
     if not isValid(response) or not response.success
+        ' Silo refuses a failed request that was retried or got a copy meanwhile, so the tile is
+        ' read again to show where it stands. Any other failure leaves the tile as it was
+        if m.pendingAction = "remove" and chainLookupReturn(response, "statusCode", 0) = 409
+            m.retryTask = CreateObject("roSGNode", "SeerrAPITask")
+            m.retryTask.request = { method: "GET", endpoint: `/api/v1/request/${m.activeItem.id.toStr()}` }
+            m.retryTask.observeField("response", "onRefusedRemove")
+            m.retryTask.control = TaskControl.RUN
+            return
+        end if
         stopLoadingSpinner()
+        if m.pendingAction = "remove" then setStop(0)
         return
     end if
 
@@ -678,8 +771,14 @@ sub onRequestActionDone(event as object)
     end if
 
     stopLoadingSpinner()
-    if action = "cancel"
+    if action = "cancel" or action = "remove"
+        removedBefore = landed > 0 and m.activeIndex < landed
         dropActiveItem()
+        if m.loadingMore
+            restartPendingPage()
+        else if removedBefore
+            rereadLandedPages(landed)
+        end if
         return
     end if
     patchActiveStatus(action = "decline" ? SEERR_REQUEST_DECLINED : SEERR_REQUEST_APPROVED)
@@ -695,12 +794,30 @@ sub onRetriedRequest(event as object)
         patchActiveStatus(SEERR_REQUEST_APPROVED)
         return
     end if
+    applyFreshRequest(fresh)
+end sub
+
+sub onRefusedRemove(event as object)
+    stopLoadingSpinner()
+    ' The tile's buttons change with its state, so focus goes back to the tile rather than onto
+    ' whichever button now sits where Remove was
+    setStop(0)
+    response = event.getData()
+    fresh = chainLookupReturn(response, "data", invalid)
+    ' A failed read still answers with an empty request, so only the same request is applied
+    if isValid(response) and response.success = true and type(fresh) = "roAssociativeArray" and isValid(fresh.id) and fresh.id = m.activeItem.id then applyFreshRequest(fresh)
+end sub
+
+sub applyFreshRequest(fresh as object)
     if m.activeIndex < 0 or m.activeIndex >= m.items.count() then return
 
     entry = m.items[m.activeIndex]
     for each key in fresh
         if key <> "media" then entry[key] = fresh[key]
     end for
+    ' The media keeps its filled-in title and art, but takes the fresh status
+    freshStatus = chainLookupReturn(fresh, "media.status", invalid)
+    if isValid(freshStatus) and type(entry.media) = "roAssociativeArray" then entry.media.status = freshStatus
     m.items[m.activeIndex] = entry
     renderItems()
 end sub
@@ -722,6 +839,37 @@ sub dropActiveItem()
 
     m.items = remaining
     renderItems()
+end sub
+
+' A page read that was already out started at the old item count, one past where the server's
+' list now starts after a removal, so it is dropped and read again from the new count on a task
+' of its own
+sub restartPendingPage()
+    if not m.loadingMore then return
+
+    m.loadGeneration++
+    requestPage(m.items.count())
+end sub
+
+' A page that landed while the removal was out may have read the list after Silo dropped the
+' request, so it started one past where it should and missed one. Its tiles and any after them are
+' dropped and read again from one before where it started
+sub rereadLandedPages(start as integer)
+    if start - 1 <= 0
+        reload()
+        return
+    end if
+
+    kept = []
+    for i = 0 to start - 2
+        if i < m.items.count() then kept.push(m.items[i])
+    end for
+    m.items = kept
+    m.loadGeneration++
+    m.hasMore = true
+    m.loadingMore = true
+    renderItems()
+    requestPage(m.items.count())
 end sub
 
 ' ===== Issues =====
