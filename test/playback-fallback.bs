@@ -2,16 +2,28 @@ sub testPlaybackFallback()
     m.global = { queueManager: { force: PlaybackMethod.PLAYNORMALLY, codec: "", callFunc: testQueueManagerCall } }
     profile = playbackDeviceProfile({})
     assertEqual(profile.DirectPlayProfiles.Count(), 1, "An ordinary request keeps direct play")
+    assertEqual(profile.CodecProfiles.Count(), 0, "An ordinary request keeps the full transcode size")
     profile = playbackDeviceProfile({ playbackMethod: PlaybackMethod.FORCETRANSCODEALLOWREMUX, transcodeCodec: "hevc" })
+    assertEqual(profile.CodecProfiles.Count(), 0, "A remux retry keeps the file's size")
     assertEqual(profile.DirectPlayProfiles.Count(), 0, "A remux request drops direct play")
     assertEqual(profile.videoCodec, "", "A remux keeps the file's codec on offer")
     profile = playbackDeviceProfile({ playbackMethod: PlaybackMethod.FORCETRANSCODEDISABLEREMUX, transcodeCodec: "hevc" })
     assertEqual(profile.DirectPlayProfiles.Count(), 0, "A full transcode request drops direct play")
     assertEqual(profile.videoCodec, "hevc", "A full transcode moves off the file's codec")
+    profile = playbackDeviceProfile({ playbackMethod: PlaybackMethod.FORCETRANSCODEDISABLEREMUX, transcodeCodec: "" })
+    assertEqual(profile.videoCodec, "", "Encoding the video again keeps the file's codec on offer")
+    assertEqual(profile.CodecProfiles.Count(), 1, "A retry that encodes the video asks for a size limit")
+    assertEqual(profile.CodecProfiles[0].Codec, invalid, "The limit holds whichever codec the server picks")
+    conditions = profile.CodecProfiles[0].Conditions
+    assertEqual(conditions[0].Property + conditions[0].Value + conditions[1].Property + conditions[1].Value, "Width1920Height1080", "That limit is 1080p")
+    assertEqual(asksToEncodeVideo({ playbackMethod: PlaybackMethod.FORCETRANSCODEDISABLEREMUX }), true, "A full transcode retry stops the server copying the video")
+    assertEqual(asksToEncodeVideo({ playbackMethod: PlaybackMethod.FORCETRANSCODEALLOWREMUX }), false, "A remux retry still lets it copy")
+    assertEqual(asksToEncodeVideo({}), false, "So does an ordinary request")
     m.global.queueManager.force = PlaybackMethod.FORCETRANSCODEDISABLEREMUX
     m.global.queueManager.codec = "h264"
     profile = playbackDeviceProfile({})
     assertEqual(profile.videoCodec, "h264", "The queue's forced transcode still applies to a plain request")
+    assertEqual(profile.CodecProfiles.Count(), 0, "The queue's forced transcode keeps the full size")
     assertEqual(profile.DirectPlayProfiles.Count(), 0, "The queue's forced transcode still drops direct play")
     assertEqual(profile.SiloDirectPlayProfiles.Count(), 1, "Silo is still told what the Roku decodes under a forced transcode")
 
@@ -38,7 +50,7 @@ sub testPlaybackFallback()
     assertEqual(streamSummary({ isTranscoded: false, container: "mkv", streamCodecs: "hevc main, aac lc" }), "direct play, mkv, hevc main, aac lc", "A direct play says what the file is")
     assertEqual(streamSummary({ isTranscoded: true, transcodeReasons: ["ContainerNotSupported", "AudioCodecNotSupported"], container: "", streamCodecs: "h264" }), "transcode for ContainerNotSupported,AudioCodecNotSupported, h264", "A transcode says why")
 
-    m.LoadMetaDataTask = { playbackMethod: "" }
+    m.LoadMetaDataTask = { playbackMethod: "", transcodeCodec: "" }
     m.isTranscoded = false
     m.videoCodec = "hevc"
     assertEqual(nextTranscodeStep(), PlaybackMethod.FORCETRANSCODEALLOWREMUX, "A direct play that never started asks for a remux")
@@ -48,8 +60,10 @@ sub testPlaybackFallback()
     m.LoadMetaDataTask.playbackMethod = ""
     assertEqual(nextTranscodeStep(), PlaybackMethod.FORCETRANSCODEDISABLEREMUX, "A server chosen stream that never started asks for the video transcoded")
     m.LoadMetaDataTask.playbackMethod = PlaybackMethod.FORCETRANSCODEDISABLEREMUX
-    assertEqual(nextTranscodeStep(), "", "A full transcode has no step left")
-    m.LoadMetaDataTask.playbackMethod = ""
+    assertEqual(nextTranscodeStep(), PlaybackMethod.FORCETRANSCODEDISABLEREMUX, "Video encoded again in its own codec can still move off it")
+    m.LoadMetaDataTask.transcodeCodec = "hevc"
+    assertEqual(nextTranscodeStep(), "", "Video already moved off its codec has no step left")
+    m.LoadMetaDataTask = { playbackMethod: "", transcodeCodec: "" }
     m.videoCodec = ""
     assertEqual(nextTranscodeStep(), "", "An unknown video codec cant be moved off")
     m.LoadMetaDataTask = invalid
@@ -88,7 +102,7 @@ end function
 
 ' Stands in for the device's real profile, which needs the hardware to answer
 function getDeviceProfile(videoCodec = "" as string) as object
-    return { DirectPlayProfiles: GetDirectPlayProfiles(), videoCodec: videoCodec }
+    return { DirectPlayProfiles: GetDirectPlayProfiles(), CodecProfiles: [], videoCodec: videoCodec }
 end function
 
 ' As the device's: a forced transcode empties the list unless asked to keep it
