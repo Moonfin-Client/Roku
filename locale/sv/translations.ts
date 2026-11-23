@@ -1392,11 +1392,11 @@
     </message>
     <message>
         <source>Crew Contributions (Seerr)</source>
-        <translation>Bidrag från teamet (Seerr)</translation>
+        <translation>Produktionsmedverkan (Seerr)</translation>
     </message>
     <message>
         <source>Appearances (Seerr)</source>
-        <translation>Framträdanden (Seerr)</translation>
+        <translation>Medverkanden (Seerr)</translation>
     </message>
     <message>
         <source>Mark as Watched</source>
@@ -3689,6 +3689,10 @@
     <message>
         <source>On person pages</source>
         <translation>På personsidor</translation>
+    </message>
+    <message>
+        <source>Reviews</source>
+        <translation>Omdömen</translation>
     </message>
 </context>
 </TS>
