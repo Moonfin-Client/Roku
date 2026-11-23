@@ -1088,7 +1088,7 @@
     </message>
     <message>
         <source>Unwatched</source>
-        <translation>Osedda</translation>
+        <translation>Ospelad</translation>
     </message>
     <message>
         <source>Up Next</source>
