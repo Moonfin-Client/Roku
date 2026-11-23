@@ -960,7 +960,7 @@
     </message>
     <message>
         <source>Crew</source>
-        <translation>Besättning</translation>
+        <translation>Filmteam</translation>
     </message>
     <message>
         <source>Daily</source>
