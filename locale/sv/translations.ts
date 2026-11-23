@@ -3706,5 +3706,13 @@
         <source>Years</source>
         <translation>Årtal</translation>
     </message>
+    <message>
+        <source>PLAY_COUNT</source>
+        <translation>Antal uppspelningar</translation>
+    </message>
+    <message>
+        <source>Play Count</source>
+        <translation>Antal uppspelningar</translation>
+    </message>
 </context>
 </TS>
