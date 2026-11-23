@@ -11191,19 +11191,9 @@
         <translation>SyncPlay Group</translation>
     </message>
     <message>
-        <source>Because you enjoy %1</source>
-        <extracomment>Title of a row a Silo server offers for Home, %1 is one or more genre names joined by the server</extracomment>
-        <translation>Because you enjoy %1</translation>
-    </message>
-    <message>
         <source>Because You Watched</source>
         <extracomment>Title of a row a Silo server offers for Home</extracomment>
         <translation>Because You Watched</translation>
-    </message>
-    <message>
-        <source>Because You Watched %1</source>
-        <extracomment>Title of a row a Silo server offers for Home, %1 is the title of a movie or show the profile watched</extracomment>
-        <translation>Because You Watched %1</translation>
     </message>
     <message>
         <source>Continue Reading</source>
@@ -11211,34 +11201,14 @@
         <translation>Continue Reading</translation>
     </message>
     <message>
-        <source>For You</source>
-        <extracomment>Title of a row a Silo server offers for Home</extracomment>
-        <translation>For You</translation>
-    </message>
-    <message>
         <source>Hidden Gems</source>
         <extracomment>Title of a row a Silo server offers for Home</extracomment>
         <translation>Hidden Gems</translation>
     </message>
     <message>
-        <source>Highly Rated in Your Library</source>
-        <extracomment>Title of a row a Silo server offers for Home</extracomment>
-        <translation>Highly Rated in Your Library</translation>
-    </message>
-    <message>
         <source>Next in Your Series</source>
         <extracomment>Title of a row a Silo server offers for Home</extracomment>
         <translation>Next in Your Series</translation>
-    </message>
-    <message>
-        <source>Picked from your history</source>
-        <extracomment>Title of a row a Silo server offers for Home</extracomment>
-        <translation>Picked from your history</translation>
-    </message>
-    <message>
-        <source>Popular on This Server</source>
-        <extracomment>Title of a row a Silo server offers for Home</extracomment>
-        <translation>Popular on This Server</translation>
     </message>
     <message>
         <source>Profiles Like You Enjoyed</source>
@@ -11326,164 +11296,9 @@
         <translation>Returning Shows</translation>
     </message>
     <message>
-        <source>Christmas Classics</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (christmas)</extracomment>
-        <translation>Christmas Classics</translation>
-    </message>
-    <message>
-        <source>Christmas Comedies</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (christmas)</extracomment>
-        <translation>Christmas Comedies</translation>
-    </message>
-    <message>
-        <source>Family Christmas</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (christmas)</extracomment>
-        <translation>Family Christmas</translation>
-    </message>
-    <message>
-        <source>Christmas Favorites</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (christmas)</extracomment>
-        <translation>Christmas Favorites</translation>
-    </message>
-    <message>
-        <source>Hallmark Christmas</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (christmas)</extracomment>
-        <translation>Hallmark Christmas</translation>
-    </message>
-    <message>
-        <source>Christmas Rom-Coms</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (christmas)</extracomment>
-        <translation>Christmas Rom-Coms</translation>
-    </message>
-    <message>
-        <source>Easter Stories</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (easter)</extracomment>
-        <translation>Easter Stories</translation>
-    </message>
-    <message>
-        <source>Easter Movies</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (easter)</extracomment>
-        <translation>Easter Movies</translation>
-    </message>
-    <message>
-        <source>Family Favorites</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (familyMovieNight)</extracomment>
-        <translation>Family Favorites</translation>
-    </message>
-    <message>
-        <source>Family Movie Night</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (familyMovieNight)</extracomment>
-        <translation>Family Movie Night</translation>
-    </message>
-    <message>
-        <source>Animated Halloween</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (halloween)</extracomment>
-        <translation>Animated Halloween</translation>
-    </message>
-    <message>
-        <source>Family Halloween</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (halloween)</extracomment>
-        <translation>Family Halloween</translation>
-    </message>
-    <message>
-        <source>Halloween Favorites</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (halloween)</extracomment>
-        <translation>Halloween Favorites</translation>
-    </message>
-    <message>
-        <source>Halloween Horror</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (halloween)</extracomment>
-        <translation>Halloween Horror</translation>
-    </message>
-    <message>
-        <source>Halloween TV</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (halloween)</extracomment>
-        <translation>Halloween TV</translation>
-    </message>
-    <message>
-        <source>New Year&apos;s Movies</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (newYear)</extracomment>
-        <translation>New Year&apos;s Movies</translation>
-    </message>
-    <message>
-        <source>Saturday Morning Cartoons</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (saturdayMorning)</extracomment>
-        <translation>Saturday Morning Cartoons</translation>
-    </message>
-    <message>
-        <source>Saturday Morning Favorites</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (saturdayMorning)</extracomment>
-        <translation>Saturday Morning Favorites</translation>
-    </message>
-    <message>
-        <source>90s Saturday Mornings</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (saturdayMorning)</extracomment>
-        <translation>90s Saturday Mornings</translation>
-    </message>
-    <message>
-        <source>Irish Film</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (stPatricks)</extracomment>
-        <translation>Irish Film</translation>
-    </message>
-    <message>
-        <source>Irish TV</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (stPatricks)</extracomment>
-        <translation>Irish TV</translation>
-    </message>
-    <message>
-        <source>Summer Blockbusters</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (summer, summerBlockbuster)</extracomment>
-        <translation>Summer Blockbusters</translation>
-    </message>
-    <message>
-        <source>Classic Summer Movies</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (summer, summerBlockbuster)</extracomment>
-        <translation>Classic Summer Movies</translation>
-    </message>
-    <message>
-        <source>Summer Nostalgia</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (summer, summerBlockbuster)</extracomment>
-        <translation>Summer Nostalgia</translation>
-    </message>
-    <message>
-        <source>Thanksgiving Movies</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (thanksgiving)</extracomment>
-        <translation>Thanksgiving Movies</translation>
-    </message>
-    <message>
-        <source>Feel-Good Favorites</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (thanksgiving)</extracomment>
-        <translation>Feel-Good Favorites</translation>
-    </message>
-    <message>
-        <source>Valentine&apos;s Favorites</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (valentines)</extracomment>
-        <translation>Valentine&apos;s Favorites</translation>
-    </message>
-    <message>
-        <source>Classic Love Stories</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (valentines)</extracomment>
-        <translation>Classic Love Stories</translation>
-    </message>
-    <message>
-        <source>Romantic Dramas</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (valentines)</extracomment>
-        <translation>Romantic Dramas</translation>
-    </message>
-    <message>
-        <source>Valentine&apos;s Rom-Coms</source>
-        <extracomment>Title of a seasonal row on a Silo server&apos;s Home (valentines)</extracomment>
-        <translation>Valentine&apos;s Rom-Coms</translation>
-    </message>
-    <message>
         <source>Seasonal Picks</source>
         <extracomment>Title of a row a Silo server offers for Home</extracomment>
         <translation>Seasonal Picks</translation>
-    </message>
-    <message>
-        <source>Top %1</source>
-        <extracomment>Title of a row a Silo server offers for Home, %1 is a genre name as the server sends it</extracomment>
-        <translation>Top %1</translation>
     </message>
     <message>
         <source>Top Picks Today</source>
