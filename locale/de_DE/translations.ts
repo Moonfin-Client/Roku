@@ -5652,5 +5652,209 @@
         <source>Hide Unwatched Count</source>
         <translation>Anzahl ungesehener Elemente ausblenden</translation>
     </message>
+    <message>
+        <source>Artwork, one play button and the episodes.</source>
+        <translation>Artwork, eine Wiedergabetaste und die Episoden.</translation>
+    </message>
+    <message>
+        <source>Audio &amp; Subtitles</source>
+        <translation>Audio &amp; Untertitel</translation>
+    </message>
+    <message>
+        <source>A slim rail of icons down the left side.</source>
+        <translation>Eine schmale Symbolleiste am linken Rand.</translation>
+    </message>
+    <message>
+        <source>A shorter banner above your rows, so more of them fit on screen.</source>
+        <translation>Ein kleineres Banner über deinen Zeilen, damit mehr davon auf den Bildschirm passen.</translation>
+    </message>
+    <message>
+        <source>Artwork first in a framed panel, with your rows right underneath.</source>
+        <translation>Artwork im Vordergrund in einem gerahmten Bereich, darunter direkt deine Zeilen.</translation>
+    </message>
+    <message>
+        <source>A drawer over the screen you were on, with play and the basics, and the full page a press away.</source>
+        <translation>Ein Fenster über dem aktuellen Bildschirm mit Wiedergabe und den wichtigsten Infos. Die vollständige Seite ist nur einen Klick entfernt.</translation>
+    </message>
+    <message>
+        <source>Apr</source>
+        <translation>Apr</translation>
+    </message>
+    <message>
+        <source>Aug</source>
+        <translation>Aug</translation>
+    </message>
+    <message>
+        <source>1 review</source>
+        <translation>1 Rezension</translation>
+    </message>
+    <message>
+        <source>Blocking a rating also blocks everything stronger than it.</source>
+        <translation>Wenn du eine Altersfreigabe blockierst, werden auch alle höheren Freigaben blockiert.</translation>
+    </message>
+    <message>
+        <source>Also on collection pages</source>
+        <translation>Gilt auch für Sammlungsseiten</translation>
+    </message>
+    <message>
+        <source>Also similar albums and artists</source>
+        <translation>Gilt auch für ähnliche Alben und Künstler</translation>
+    </message>
+    <message>
+        <source>Birthplace</source>
+        <translation>Geburtsort</translation>
+    </message>
+    <message>
+        <source>Achievement unlocked</source>
+        <translation>Erfolg freigeschaltet</translation>
+    </message>
+    <message>
+        <source>Add friends</source>
+        <translation>Freunde hinzufügen</translation>
+    </message>
+    <message>
+        <source>Add people</source>
+        <translation>Personen hinzufügen</translation>
+    </message>
+    <message>
+        <source>1 unread message</source>
+        <translation>1 ungelesene Nachricht</translation>
+    </message>
+    <message>
+        <source>1 waiting for you</source>
+        <translation>1 wartet auf dich</translation>
+    </message>
+    <message>
+        <source>Block</source>
+        <translation>Blockieren</translation>
+    </message>
+    <message>
+        <source>Add as friend</source>
+        <translation>Als Freund hinzufügen</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>Annehmen</translation>
+    </message>
+    <message>
+        <source>Blocked users</source>
+        <translation>Blockierte Personen</translation>
+    </message>
+    <message>
+        <source>Appear offline</source>
+        <translation>Als offline anzeigen</translation>
+    </message>
+    <message>
+        <source>Applies everywhere</source>
+        <translation>Gilt überall</translation>
+    </message>
+    <message>
+        <source>AUDIO</source>
+        <translation>AUDIO</translation>
+    </message>
+    <message>
+        <source>Badge Style</source>
+        <translation>Abzeichenstil</translation>
+    </message>
+    <message>
+        <source>Badge puts Seerr&apos;s dot in a corner. Banner runs the status across the top of the poster.</source>
+        <translation>„Abzeichen“ zeigt den Seerr-Status als Punkt in einer Ecke. „Banner“ zeigt ihn als Streifen oben über dem Poster.</translation>
+    </message>
+    <message>
+        <source>Badge</source>
+        <translation>Abzeichen</translation>
+    </message>
+    <message>
+        <source>5.1 surround</source>
+        <translation>5.1-Surround</translation>
+    </message>
+    <message>
+        <source>7.1 surround</source>
+        <translation>7.1-Surround</translation>
+    </message>
+    <message>
+        <source>All Artists</source>
+        <translation>Alle Künstler</translation>
+    </message>
+    <message>
+        <source>A to Z</source>
+        <translation>A bis Z</translation>
+    </message>
+    <message>
+        <source>1 song</source>
+        <translation>1 Titel</translation>
+    </message>
+    <message>
+        <source>All Songs A to Z</source>
+        <translation>Alle Titel von A bis Z</translation>
+    </message>
+    <message>
+        <source>300 songs at random</source>
+        <translation>300 zufällige Titel</translation>
+    </message>
+    <message>
+        <source>1 play</source>
+        <translation>1-mal abgespielt</translation>
+    </message>
+    <message>
+        <source>1 playlist</source>
+        <translation>1 Playlist</translation>
+    </message>
+    <message>
+        <source>1 min already aired</source>
+        <translation>1 Min. bereits gelaufen</translation>
+    </message>
+    <message>
+        <source>Already set to record</source>
+        <translation>Aufnahme bereits geplant</translation>
+    </message>
+    <message>
+        <source>Also record the future showing to get a complete recording?</source>
+        <translation>Auch die spätere Ausstrahlung aufnehmen, um eine vollständige Aufnahme zu erhalten?</translation>
+    </message>
+    <message>
+        <source>Also record a future showing automatically once one is found, to get a complete recording?</source>
+        <translation>Zusätzlich eine spätere Ausstrahlung automatisch aufnehmen, sobald eine gefunden wird, um eine vollständige Aufnahme zu erhalten?</translation>
+    </message>
+    <message>
+        <source>All day</source>
+        <translation>Ganztägig</translation>
+    </message>
+    <message>
+        <source>Agenda</source>
+        <translation>Terminliste</translation>
+    </message>
+    <message>
+        <source>Also list episodes and movies Sonarr and Radarr aren&apos;t set to download</source>
+        <translation>Auch Folgen und Filme anzeigen, die Sonarr und Radarr nicht herunterladen sollen</translation>
+    </message>
+    <message>
+        <source>Add Moonbase to your server</source>
+        <translation>Füge Moonbase zu deinem Server hinzu</translation>
+    </message>
+    <message>
+        <source>A free server plugin that unlocks more of Moonfin</source>
+        <translation>Ein kostenloses Server-Plugin, das mehr Funktionen von Moonfin freischaltet</translation>
+    </message>
+    <message>
+        <source>A calendar of what&apos;s coming up</source>
+        <translation>Ein Kalender mit allem, was demnächst erscheint</translation>
+    </message>
+    <message>
+        <source>Back in the party</source>
+        <translation>Wieder in der Party</translation>
+    </message>
+    <message>
+        <source>Again!</source>
+        <translation>Nochmal!</translation>
+    </message>
+    <message>
+        <source>Continue Reading</source>
+        <translation>Weiterlesen</translation>
+    </message>
+    <message>
+        <source>Recently Released Episodes</source>
+        <translation>Kürzlich veröffentlichte Episoden</translation>
+    </message>
 </context>
 </TS>
