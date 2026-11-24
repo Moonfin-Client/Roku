@@ -14,7 +14,10 @@ namespace silo
         if not isString(url) then return ""
         url = url.Trim()
         if url = "" or itemId = "" then return ""
-        if type(m.siloImages) <> "roAssociativeArray" or m.siloImages.Count() > silo.MAX_IMAGES then m.siloImages = {}
+        if type(m.siloImages) <> "roAssociativeArray" or m.siloImages.Count() > silo.MAX_IMAGES
+            m.siloImages = {}
+            m.siloCompleteBackdrops = {}
+        end if
         key = silo.ImageKey(server, itemId, imageType, index)
         if m.siloImages[key] <> url
             m.siloImages[key] = url
@@ -64,7 +67,24 @@ namespace silo
         for each field in m.siloImagesPending
             ' A field queued before this thread's record started over has nothing left to publish
             pictures = m.siloImagesByItem[field]
-            if type(pictures) = "roAssociativeArray" then fields[field] = pictures
+            if type(pictures) = "roAssociativeArray"
+                existing = store.getField(field)
+                if type(existing) = "roAssociativeArray" and existing["__complete"] = true and pictures["__complete"] <> true
+                    ' Preserve a complete shared backdrop list when another task only mapped a partial card
+                    merged = {}
+                    for each ek in existing
+                        merged[ek] = existing[ek]
+                    end for
+                    for each pk in pictures
+                        if pk <> "__complete" and existing.DoesExist(pk)
+                            merged[pk] = pictures[pk]
+                        end if
+                    end for
+                    fields[field] = merged
+                else
+                    fields[field] = pictures
+                end if
+            end if
         end for
         m.siloImagesPending = {}
         if fields.Count() > 0 then store.update(fields, true)
@@ -85,12 +105,52 @@ namespace silo
     end function
 
     function HasCompleteBackdrops(server as string, itemId as string) as boolean
-        if type(m.siloCompleteBackdrops) <> "roAssociativeArray" then return false
-        return m.siloCompleteBackdrops[silo.CompleteBackdropsKey(server, itemId)] = true
+        if type(m.siloCompleteBackdrops) = "roAssociativeArray"
+            if m.siloCompleteBackdrops[silo.CompleteBackdropsKey(server, itemId)] = true then return true
+        end if
+        store = silo.ImageStore()
+        if store <> invalid
+            pictures = store.getField(silo.ImageField(server, itemId, "Backdrop"))
+            if type(pictures) = "roAssociativeArray" and pictures["__complete"] = true then return true
+        end if
+        return false
     end function
 
+    ' Replaces borrowed episode-fallback backdrop slots without marking the series complete.
+    sub RegisterBorrowedBackdrops(server as string, itemId as string, urls as object)
+        if itemId = "" or type(urls) <> "roArray" or urls.count() = 0 then return
+        index = 0
+        for each url in urls
+            tag = silo.RegisterImage(server, itemId, "Backdrop", url, index)
+            if tag <> "" then index++
+        end for
+        silo.TrimBackdropsFrom(server, itemId, index)
+    end sub
+
+    sub TrimBackdropsFrom(server as string, itemId as string, startIndex as integer)
+        if type(m.siloImages) <> "roAssociativeArray" then return
+        field = silo.ImageField(server, itemId, "Backdrop")
+        pictures = invalid
+        if type(m.siloImagesByItem) = "roAssociativeArray"
+            pictures = m.siloImagesByItem[field]
+        end if
+        trimIdx = startIndex
+        while true
+            key = silo.ImageKey(server, itemId, "Backdrop", trimIdx)
+            if not m.siloImages.DoesExist(key) then exit while
+            m.siloImages.Delete(key)
+            if type(pictures) = "roAssociativeArray" and pictures.DoesExist(key)
+                pictures.Delete(key)
+                if type(m.siloImagesPending) <> "roAssociativeArray" then m.siloImagesPending = {}
+                m.siloImagesPending[field] = true
+            end if
+            trimIdx++
+        end while
+    end sub
+
     ' Replaces an item's backdrop list with its authoritative set, removing any
-    ' trailing indices previously seeded by episode fallback, and marks it complete.
+    ' trailing indices previously seeded by episode fallback, and marks it complete
+    ' both locally and in the shared cross-thread store.
     function ReplaceBackdrops(server as string, itemId as string, urls as object) as object
         tags = []
         if itemId = "" or type(urls) <> "roArray" then return tags
@@ -104,31 +164,18 @@ namespace silo
             end if
         end for
 
-        ' Trim stale trailing backdrop slots left behind by episode fallback
-        if type(m.siloImages) = "roAssociativeArray"
-            field = silo.ImageField(server, itemId, "Backdrop")
-            pictures = invalid
-            if type(m.siloImagesByItem) = "roAssociativeArray"
-                pictures = m.siloImagesByItem[field]
-            end if
-            trimIdx = tags.count()
-            while true
-                key = silo.ImageKey(server, itemId, "Backdrop", trimIdx)
-                if not m.siloImages.DoesExist(key) then exit while
-                m.siloImages.Delete(key)
-                if type(pictures) = "roAssociativeArray" and pictures.DoesExist(key)
-                    pictures.Delete(key)
-                    if type(m.siloImagesPending) <> "roAssociativeArray" then m.siloImagesPending = {}
-                    m.siloImagesPending[field] = true
-                end if
-                trimIdx++
-            end while
-        end if
+        silo.TrimBackdropsFrom(server, itemId, tags.count())
 
         if type(m.siloCompleteBackdrops) <> "roAssociativeArray" then m.siloCompleteBackdrops = {}
         cKey = silo.CompleteBackdropsKey(server, itemId)
+        field = silo.ImageField(server, itemId, "Backdrop")
         if tags.count() > 0
             m.siloCompleteBackdrops[cKey] = true
+            if type(m.siloImagesByItem) = "roAssociativeArray" and type(m.siloImagesByItem[field]) = "roAssociativeArray"
+                m.siloImagesByItem[field]["__complete"] = true
+                if type(m.siloImagesPending) <> "roAssociativeArray" then m.siloImagesPending = {}
+                m.siloImagesPending[field] = true
+            end if
         else
             m.siloCompleteBackdrops.Delete(cKey)
         end if
