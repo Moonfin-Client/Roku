@@ -5856,5 +5856,4237 @@
         <source>Recently Released Episodes</source>
         <translation>Kürzlich veröffentlichte Episoden</translation>
     </message>
+    <message>
+        <source>+{0}</source>
+        <translation type="unfinished">+{0}</translation>
+    </message>
+    <message>
+        <source>Best: {0} days</source>
+        <translation type="unfinished">Bester Streak: {0} Tage</translation>
+    </message>
+    <message>
+        <source>Carousel</source>
+        <translation type="unfinished">Karussell</translation>
+    </message>
+    <message>
+        <source>Modern cards over a panel with the focused title&apos;s details.</source>
+        <translation type="unfinished">Moderne Karten über einem Bereich mit den Details des ausgewählten Titels.</translation>
+    </message>
+    <message>
+        <source>Choose which buttons appear on the details screen action row and what order they run in. Press OK to show or hide a button, and Left or Right to move it. Play, Resume and Restart always lead the row.</source>
+        <translation type="unfinished">Wähle, welche Tasten in der Aktionsleiste der Detailansicht erscheinen und in welcher Reihenfolge. Drücke OK, um eine Taste ein- oder auszublenden, und links oder rechts, um sie zu verschieben. Abspielen, Fortsetzen und Neu starten stehen immer am Anfang.</translation>
+    </message>
+    <message>
+        <source>Could not buy that.</source>
+        <translation type="unfinished">Das konnte nicht gekauft werden.</translation>
+    </message>
+    <message>
+        <source>Could not change how the profile looks.</source>
+        <translation type="unfinished">Das Aussehen des Profils konnte nicht geändert werden.</translation>
+    </message>
+    <message>
+        <source>Could not load your achievements.</source>
+        <translation type="unfinished">Deine Erfolge konnten nicht geladen werden.</translation>
+    </message>
+    <message>
+        <source>Could not use that power-up.</source>
+        <translation type="unfinished">Dieses Power-up konnte nicht verwendet werden.</translation>
+    </message>
+    <message>
+        <source>Could not reroll those quests.</source>
+        <translation type="unfinished">Diese Quests konnten nicht neu ausgewürfelt werden.</translation>
+    </message>
+    <message>
+        <source>Covers one missed day. Only one can be banked.</source>
+        <translation type="unfinished">Deckt einen verpassten Tag ab. Nur einer kann angespart werden.</translation>
+    </message>
+    <message>
+        <source>Double Credit</source>
+        <translation type="unfinished">Doppelte Punkte</translation>
+    </message>
+    <message>
+        <source>Early morning sessions</source>
+        <translation type="unfinished">Sessions am frühen Morgen</translation>
+    </message>
+    <message>
+        <source>Equipped</source>
+        <translation type="unfinished">Ausgerüstet</translation>
+    </message>
+    <message>
+        <source>Films watched</source>
+        <translation type="unfinished">Gesehene Filme</translation>
+    </message>
+    <message>
+        <source>Genres watched</source>
+        <translation type="unfinished">Gesehene Genres</translation>
+    </message>
+    <message>
+        <source>What selecting a Continue Watching or Next Up item does</source>
+        <translation type="unfinished">Was das Auswählen eines Elements aus „Weiterschauen“ oder „Als Nächstes“ bewirkt</translation>
+    </message>
+    <message>
+        <source>Go to Details</source>
+        <translation type="unfinished">Zu den Details</translation>
+    </message>
+    <message>
+        <source>Play immediately</source>
+        <translation type="unfinished">Sofort abspielen</translation>
+    </message>
+    <message>
+        <source>Habits</source>
+        <translation type="unfinished">Gewohnheiten</translation>
+    </message>
+    <message>
+        <source>Hours</source>
+        <translation type="unfinished">Stunden</translation>
+    </message>
+    <message>
+        <source>Hidden achievement</source>
+        <translation type="unfinished">Verborgener Erfolg</translation>
+    </message>
+    <message>
+        <source>Hours watched</source>
+        <translation type="unfinished">Geschaute Stunden</translation>
+    </message>
+    <message>
+        <source>How you compare with other users on this server</source>
+        <translation type="unfinished">Wie du im Vergleich zu anderen Nutzern auf diesem Server abschneidest</translation>
+    </message>
+    <message>
+        <source>Instant Mix</source>
+        <translation>Instant Mix</translation>
+    </message>
+    <message>
+        <source>It comes straight out of your score bank.</source>
+        <translation type="unfinished">Es wird direkt von deinem Punktekonto abgezogen.</translation>
+    </message>
+    <message>
+        <source>Items watched</source>
+        <translation type="unfinished">Gesehene Elemente</translation>
+    </message>
+    <message>
+        <source>Languages watched</source>
+        <translation type="unfinished">Gesehene Sprachen</translation>
+    </message>
+    <message>
+        <source>Late night sessions</source>
+        <translation type="unfinished">Sessions spät in der Nacht</translation>
+    </message>
+    <message>
+        <source>Leaderboard</source>
+        <translation type="unfinished">Bestenliste</translation>
+    </message>
+    <message>
+        <source>Libraries visited</source>
+        <translation type="unfinished">Besuchte Bibliotheken</translation>
+    </message>
+    <message>
+        <source>Library completion</source>
+        <translation type="unfinished">Bibliotheksfortschritt</translation>
+    </message>
+    <message>
+        <source>Loadout</source>
+        <translation type="unfinished">Ausrüstung</translation>
+    </message>
+    <message>
+        <source>Locked</source>
+        <translation type="unfinished">Gesperrt</translation>
+    </message>
+    <message>
+        <source>Longest single item</source>
+        <translation type="unfinished">Längstes einzelnes Element</translation>
+    </message>
+    <message>
+        <source>Mark Watched</source>
+        <translation type="unfinished">Als gesehen markieren</translation>
+    </message>
+    <message>
+        <source>Month</source>
+        <translation type="unfinished">Monat</translation>
+    </message>
+    <message>
+        <source>Most common badge</source>
+        <translation type="unfinished">Häufigstes Abzeichen</translation>
+    </message>
+    <message>
+        <source>Most episodes in a day</source>
+        <translation type="unfinished">Meiste Episoden an einem Tag</translation>
+    </message>
+    <message>
+        <source>Most films in a day</source>
+        <translation type="unfinished">Meiste Filme an einem Tag</translation>
+    </message>
+    <message>
+        <source>Nothing for sale right now.</source>
+        <translation type="unfinished">Derzeit gibt es nichts zu kaufen.</translation>
+    </message>
+    <message>
+        <source>Nothing here yet.</source>
+        <translation type="unfinished">Hier ist noch nichts.</translation>
+    </message>
+    <message>
+        <source>Nothing to suggest for this badge.</source>
+        <translation type="unfinished">Für dieses Abzeichen gibt es keine Vorschläge.</translation>
+    </message>
+    <message>
+        <source>None held</source>
+        <translation type="unfinished">Keine vorhanden</translation>
+    </message>
+    <message>
+        <source>Open this on your phone</source>
+        <translation type="unfinished">Auf dem Handy öffnen</translation>
+    </message>
+    <message>
+        <source>Owned</source>
+        <translation type="unfinished">Im Besitz</translation>
+    </message>
+    <message>
+        <source>PIN must be exactly 4 digits.</source>
+        <translation type="unfinished">Die PIN muss genau 4 Ziffern haben.</translation>
+    </message>
+    <message>
+        <source>Play All</source>
+        <translation type="unfinished">Alle abspielen</translation>
+    </message>
+    <message>
+        <source>Power-ups</source>
+        <translation type="unfinished">Power-ups</translation>
+    </message>
+    <message>
+        <source>Progress</source>
+        <translation type="unfinished">Fortschritt</translation>
+    </message>
+    <message>
+        <source>Mixed Canon/Filler</source>
+        <translation type="unfinished">Gemischt Kanon/Filler</translation>
+    </message>
+    <message>
+        <source>Rewatches</source>
+        <translation type="unfinished">Wiederholungen</translation>
+    </message>
+    <message>
+        <source>Running now</source>
+        <translation type="unfinished">Läuft gerade</translation>
+    </message>
+    <message>
+        <source>Quests</source>
+        <translation type="unfinished">Quests</translation>
+    </message>
+    <message>
+        <source>Reroll daily quests</source>
+        <translation type="unfinished">Tägliche Quests neu auswürfeln</translation>
+    </message>
+    <message>
+        <source>Reroll these quests?</source>
+        <translation type="unfinished">Diese Quests neu auswürfeln?</translation>
+    </message>
+    <message>
+        <source>Reroll weekly quests</source>
+        <translation type="unfinished">Wöchentliche Quests neu auswürfeln</translation>
+    </message>
+    <message>
+        <source>Score bank</source>
+        <translation type="unfinished">Punktekonto</translation>
+    </message>
+    <message>
+        <source>Score earned</source>
+        <translation type="unfinished">Verdiente Punkte</translation>
+    </message>
+    <message>
+        <source>Score to spend and the boosts you hold</source>
+        <translation type="unfinished">Punkte zum Ausgeben und deine Boosts</translation>
+    </message>
+    <message>
+        <source>Run Setup Again</source>
+        <translation type="unfinished">Einrichtung erneut ausführen</translation>
+    </message>
+    <message>
+        <source>Score</source>
+        <translation type="unfinished">Punkte</translation>
+    </message>
+    <message>
+        <source>Season {0}</source>
+        <translation type="unfinished">Staffel {0}</translation>
+    </message>
+    <message>
+        <source>Series finished</source>
+        <translation type="unfinished">Serie beendet</translation>
+    </message>
+    <message>
+        <source>Show messages button</source>
+        <translation type="unfinished">Nachrichten-Taste anzeigen</translation>
+    </message>
+    <message>
+        <source>Size: {0}  •  Format: {1}</source>
+        <translation type="unfinished">Größe: {0}  •  Format: {1}</translation>
+    </message>
+    <message>
+        <source>Stats</source>
+        <translation type="unfinished">Statistik</translation>
+    </message>
+    <message>
+        <source>Streak</source>
+        <translation type="unfinished">Streak</translation>
+    </message>
+    <message>
+        <source>Streak Freeze</source>
+        <translation type="unfinished">Streak-Freeze</translation>
+    </message>
+    <message>
+        <source>The avatar and title on your profile</source>
+        <translation type="unfinished">Der Avatar und Titel in deinem Profil</translation>
+    </message>
+    <message>
+        <source>Your records and how the server is doing</source>
+        <translation type="unfinished">Deine Rekorde und wie es dem Server geht</translation>
+    </message>
+    <message>
+        <source>When you watch</source>
+        <translation type="unfinished">Wann du schaust</translation>
+    </message>
+    <message>
+        <source>Weekend sessions</source>
+        <translation type="unfinished">Sessions am Wochenende</translation>
+    </message>
+    <message>
+        <source>Variety</source>
+        <translation type="unfinished">Abwechslung</translation>
+    </message>
+    <message>
+        <source>This server</source>
+        <translation type="unfinished">Dieser Server</translation>
+    </message>
+    <message>
+        <source>Suggested items to watch</source>
+        <translation type="unfinished">Vorgeschlagene Inhalte zum Ansehen</translation>
+    </message>
+    <message>
+        <source>Swap this set for a different one</source>
+        <translation type="unfinished">Diesen Satz gegen einen anderen tauschen</translation>
+    </message>
+    <message>
+        <source>Top actors</source>
+        <translation type="unfinished">Top-Schauspieler</translation>
+    </message>
+    <message>
+        <source>Top directors</source>
+        <translation type="unfinished">Top-Regisseure</translation>
+    </message>
+    <message>
+        <source>Top rank reached</source>
+        <translation type="unfinished">Höchster Rang erreicht</translation>
+    </message>
+    <message>
+        <source>Unknown Codec</source>
+        <translation type="unfinished">Unbekannter Codec</translation>
+    </message>
+    <message>
+        <source>Unlocked {0}</source>
+        <translation type="unfinished">Freigeschaltet am {0}</translation>
+    </message>
+    <message>
+        <source>Unlocked</source>
+        <translation type="unfinished">Freigeschaltet</translation>
+    </message>
+    <message>
+        <source>Use this power-up?</source>
+        <translation type="unfinished">Dieses Power-up verwenden?</translation>
+    </message>
+    <message>
+        <source>Used this week, comes back Monday UTC</source>
+        <translation type="unfinished">Diese Woche verwendet, wieder verfügbar am Montag (UTC)</translation>
+    </message>
+    <message>
+        <source>Used today, comes back at midnight UTC</source>
+        <translation type="unfinished">Heute verwendet, wieder verfügbar um Mitternacht (UTC)</translation>
+    </message>
+    <message>
+        <source>Versions</source>
+        <translation type="unfinished">Versionen</translation>
+    </message>
+    <message>
+        <source>Walk through the first run questions again: navigation, media bar, rows, details, and theme.</source>
+        <translation type="unfinished">Die Fragen der Ersteinrichtung erneut durchgehen: Navigation, Medienleiste, Zeilen, Details und Theme.</translation>
+    </message>
+    <message>
+        <source>XP Boost</source>
+        <translation type="unfinished">XP-Boost</translation>
+    </message>
+    <message>
+        <source>You get one daily and one weekly reroll, and this spends it.</source>
+        <translation type="unfinished">Du hast ein tägliches und ein wöchentliches Neuauswürfeln, und dieses wird dabei verbraucht.</translation>
+    </message>
+    <message>
+        <source>It&apos;s spent as soon as you confirm.</source>
+        <translation type="unfinished">Es wird verbraucht, sobald du bestätigst.</translation>
+    </message>
+    <message>
+        <source>Shop</source>
+        <translation type="unfinished">Shop</translation>
+    </message>
+    <message>
+        <source>Spend score on more boosts</source>
+        <translation type="unfinished">Punkte für weitere Boosts ausgeben</translation>
+    </message>
+    <message>
+        <source>Week</source>
+        <translation type="unfinished">Woche</translation>
+    </message>
+    <message>
+        <source>What the server has unlocked lately</source>
+        <translation type="unfinished">Was der Server zuletzt freigeschaltet hat</translation>
+    </message>
+    <message>
+        <source>What you watched recently</source>
+        <translation type="unfinished">Was du zuletzt geschaut hast</translation>
+    </message>
+    <message>
+        <source>Step {0} of {1}</source>
+        <translation type="unfinished">Schritt {0} von {1}</translation>
+    </message>
+    <message>
+        <source>Up and down to preview · OK to choose · Back twice to skip</source>
+        <translation type="unfinished">Hoch und runter für Vorschau · OK zum Auswählen · Zweimal Zurück zum Überspringen</translation>
+    </message>
+    <message>
+        <source>Navigation Bar</source>
+        <translation type="unfinished">Navigationsleiste</translation>
+    </message>
+    <message>
+        <source>Tabs across the top of the screen.</source>
+        <translation type="unfinished">Tabs am oberen Bildschirmrand.</translation>
+    </message>
+    <message>
+        <source>Large artwork with the title, details and overview laid over it.</source>
+        <translation type="unfinished">Großes Artwork mit Titel, Details und Beschreibung darüber.</translation>
+    </message>
+    <message>
+        <source>Large artwork led by a big title logo.</source>
+        <translation type="unfinished">Großes Artwork mit einem großen Titellogo.</translation>
+    </message>
+    <message>
+        <source>Titles shelved as book spines, with the featured one face out.</source>
+        <translation type="unfinished">Titel als Buchrücken im Regal, der hervorgehobene mit dem Cover nach vorne.</translation>
+    </message>
+    <message>
+        <source>The featured title opened up, with the next few lined up beside it.</source>
+        <translation type="unfinished">Der hervorgehobene Titel aufgeklappt, mit den nächsten daneben aufgereiht.</translation>
+    </message>
+    <message>
+        <source>No featured area. Home opens straight onto your rows.</source>
+        <translation type="unfinished">Kein hervorgehobener Bereich. Die Startseite öffnet direkt mit deinen Zeilen.</translation>
+    </message>
+    <message>
+        <source>Hero-first, with pop-up cards for cast and extras.</source>
+        <translation type="unfinished">Titelbild im Vordergrund, mit Pop-up-Karten für Besetzung und Extras.</translation>
+    </message>
+    <message>
+        <source>Full-screen, with sections stacked instead of tabs.</source>
+        <translation type="unfinished">Vollbild, mit untereinander angeordneten Bereichen statt Tabs.</translation>
+    </message>
+    <message>
+        <source>The title centered over a full screen backdrop, with everything else down the page.</source>
+        <translation type="unfinished">Der Titel zentriert über einem bildschirmfüllenden Hintergrund, alles andere weiter unten auf der Seite.</translation>
+    </message>
+    <message>
+        <source>The title in a glass window over its blurred art, with tabs under the buttons.</source>
+        <translation type="unfinished">Der Titel in einem Glasfenster über dem verschwommenen Artwork, mit Tabs unter den Tasten.</translation>
+    </message>
+    <message>
+        <source>^0 of ^1</source>
+        <translation type="unfinished">^0 von ^1</translation>
+    </message>
+    <message>
+        <source>The poster up front, with play under it and the details beside it.</source>
+        <translation type="unfinished">Das Poster im Vordergrund, darunter die Wiedergabe und daneben die Details.</translation>
+    </message>
+    <message>
+        <source>Smart Search</source>
+        <translation type="unfinished">Intelligente Suche</translation>
+    </message>
+    <message>
+        <source>Smart Search on Seerr</source>
+        <translation type="unfinished">Intelligente Suche auf Seerr</translation>
+    </message>
+    <message>
+        <source>Support Moonfin Development</source>
+        <translation type="unfinished">Moonfin-Entwicklung unterstützen</translation>
+    </message>
+    <message>
+        <source>Moonfin is free and open source. If you find it useful, please consider supporting continued development. Scan the QR code below to donate:</source>
+        <translation type="unfinished">Moonfin ist kostenlos und Open Source. Wenn du es nützlich findest, unterstütze bitte die weitere Entwicklung. Scanne den QR-Code unten, um zu spenden:</translation>
+    </message>
+    <message>
+        <source>Thank you for your support!</source>
+        <translation type="unfinished">Danke für deine Unterstützung!</translation>
+    </message>
+    <message>
+        <source>Update Available</source>
+        <translation type="unfinished">Update verfügbar</translation>
+    </message>
+    <message>
+        <source>is now available</source>
+        <translation type="unfinished">ist jetzt verfügbar</translation>
+    </message>
+    <message>
+        <source>A new version is available. Please visit the GitHub releases page to download.</source>
+        <translation type="unfinished">Eine neue Version ist verfügbar. Besuche zum Herunterladen die Releases-Seite auf GitHub.</translation>
+    </message>
+    <message>
+        <source>Video Library Style</source>
+        <translation type="unfinished">Stil der Videobibliothek</translation>
+    </message>
+    <message>
+        <source>Choose between the Classic, Modern and Docked library headers.</source>
+        <translation type="unfinished">Wähle zwischen den Bibliotheks-Kopfzeilen „Klassisch“, „Modern“ und „Angedockt“.</translation>
+    </message>
+    <message>
+        <source>Music Library Style</source>
+        <translation type="unfinished">Stil der Musikbibliothek</translation>
+    </message>
+    <message>
+        <source>Classic is the original artist and album grid. Quick Access starts with a grid of your recent albums and playlists. Immersive leads with the album you&apos;re listening to.</source>
+        <translation type="unfinished">„Klassisch“ ist das ursprüngliche Raster aus Künstlern und Alben. „Schnellzugriff“ beginnt mit einem Raster deiner letzten Alben und Playlists. „Immersiv“ beginnt mit dem Album, das du gerade hörst.</translation>
+    </message>
+    <message>
+        <source>Quick Access</source>
+        <translation type="unfinished">Schnellzugriff</translation>
+    </message>
+    <message>
+        <source>Immersive</source>
+        <translation type="unfinished">Immersiv</translation>
+    </message>
+    <message>
+        <source>Jump Back In</source>
+        <translation type="unfinished">Weiterhören</translation>
+    </message>
+    <message>
+        <source>From This Album</source>
+        <translation type="unfinished">Aus diesem Album</translation>
+    </message>
+    <message>
+        <source>Search Music</source>
+        <translation type="unfinished">Musik durchsuchen</translation>
+    </message>
+    <message>
+        <source>Latest {0}</source>
+        <translation type="unfinished">Neueste {0}</translation>
+    </message>
+    <message>
+        <source>Release Year</source>
+        <translation type="unfinished">Erscheinungsjahr</translation>
+    </message>
+    <message>
+        <source>Choose sorting for Collections home row</source>
+        <translation type="unfinished">Sortierung der Sammlungszeile auf der Startseite wählen</translation>
+    </message>
+    <message>
+        <source>Choose sorting for Genres home row</source>
+        <translation type="unfinished">Sortierung der Genrezeile auf der Startseite wählen</translation>
+    </message>
+    <message>
+        <source>Choose which media types are included in Genres home row</source>
+        <translation type="unfinished">Wählen, welche Medientypen in der Genrezeile auf der Startseite enthalten sind</translation>
+    </message>
+    <message>
+        <source>Server Order</source>
+        <translation type="unfinished">Serverreihenfolge</translation>
+    </message>
+    <message>
+        <source>Home View</source>
+        <translation type="unfinished">Startseitenansicht</translation>
+    </message>
+    <message>
+        <source>View style</source>
+        <translation type="unfinished">Ansichtsstil</translation>
+    </message>
+    <message>
+        <source>{0} badges earned</source>
+        <translation type="unfinished">{0} Abzeichen verdient</translation>
+    </message>
+    <message>
+        <source>{0} days watched</source>
+        <translation type="unfinished">{0} Tage geschaut</translation>
+    </message>
+    <message>
+        <source>{0} pts</source>
+        <translation type="unfinished">{0} Pkt.</translation>
+    </message>
+    <message>
+        <source>{0} ×{1}</source>
+        <translation type="unfinished">{0} ×{1}</translation>
+    </message>
+    <message>
+        <source>{0} held</source>
+        <translation type="unfinished">{0} gehalten</translation>
+    </message>
+    <message>
+        <source>{0} min</source>
+        <translation type="unfinished">{0} Min.</translation>
+    </message>
+    <message>
+        <source>{0} libraries</source>
+        <translation type="unfinished">{0} Bibliotheken</translation>
+    </message>
+    <message>
+        <source>{0} completed</source>
+        <translation type="unfinished">{0} abgeschlossen</translation>
+    </message>
+    <message>
+        <source>{0} day streak</source>
+        <translation type="unfinished">{0} Tage in Folge</translation>
+    </message>
+    <message>
+        <source>{0} of {1} badges</source>
+        <translation type="unfinished">{0} von {1} Abzeichen</translation>
+    </message>
+    <message>
+        <source>{0} points to {1}</source>
+        <translation type="unfinished">Noch {0} Punkte bis {1}</translation>
+    </message>
+    <message>
+        <source>{0} points</source>
+        <translation type="unfinished">{0} Punkte</translation>
+    </message>
+    <message>
+        <source>Earned at {0} lifetime score</source>
+        <translation type="unfinished">Erreicht bei {0} Gesamtpunkten</translation>
+    </message>
+    <message>
+        <source>{0} favorites sorted by {1}</source>
+        <translation type="unfinished">{0} Favoriten, sortiert nach {1}</translation>
+    </message>
+    <message>
+        <source>{0}m</source>
+        <translation type="unfinished">{0} Min.</translation>
+    </message>
+    <message>
+        <source>{0}s</source>
+        <translation type="unfinished">{0} s</translation>
+    </message>
+    <message>
+        <source>Too many attempts. Try again in {0}.</source>
+        <translation type="unfinished">Zu viele Versuche. Versuche es in {0} erneut.</translation>
+    </message>
+    <message>
+        <source>{0} unlocked {1}</source>
+        <translation type="unfinished">{0} hat {1} freigeschaltet</translation>
+    </message>
+    <message>
+        <source>{0}m ago</source>
+        <translation type="unfinished">vor {0} Min.</translation>
+    </message>
+    <message>
+        <source>{0}h ago</source>
+        <translation type="unfinished">vor {0} Std.</translation>
+    </message>
+    <message>
+        <source>{0}d ago</source>
+        <translation type="unfinished">vor {0} T.</translation>
+    </message>
+    <message>
+        <source>Tomorrow</source>
+        <translation type="unfinished">Morgen</translation>
+    </message>
+    <message>
+        <source>Jan</source>
+        <translation type="unfinished">Jan</translation>
+    </message>
+    <message>
+        <source>Feb</source>
+        <translation type="unfinished">Feb</translation>
+    </message>
+    <message>
+        <source>Mar</source>
+        <translation type="unfinished">Mär</translation>
+    </message>
+    <message>
+        <source>May</source>
+        <translation type="unfinished">Mai</translation>
+    </message>
+    <message>
+        <source>Jun</source>
+        <translation type="unfinished">Jun</translation>
+    </message>
+    <message>
+        <source>Jul</source>
+        <translation type="unfinished">Jul</translation>
+    </message>
+    <message>
+        <source>Sep</source>
+        <translation type="unfinished">Sep</translation>
+    </message>
+    <message>
+        <source>Oct</source>
+        <translation type="unfinished">Okt</translation>
+    </message>
+    <message>
+        <source>Nov</source>
+        <translation type="unfinished">Nov</translation>
+    </message>
+    <message>
+        <source>{count} chapters</source>
+        <translation type="unfinished">{count} Kapitel</translation>
+    </message>
+    <message>
+        <source>{count} extras</source>
+        <translation type="unfinished">{count} Extras</translation>
+    </message>
+    <message>
+        <source>{count} reviews</source>
+        <translation type="unfinished">{count} Rezensionen</translation>
+    </message>
+    <message>
+        <source>Reviews</source>
+        <translation type="unfinished">Rezensionen</translation>
+    </message>
+    <message>
+        <source>{count} collections</source>
+        <translation type="unfinished">{count} Sammlungen</translation>
+    </message>
+    <message>
+        <source>{count} people</source>
+        <translation type="unfinished">{count} Personen</translation>
+    </message>
+    <message>
+        <source>{count} studios</source>
+        <translation type="unfinished">{count} Studios</translation>
+    </message>
+    <message>
+        <source>Writers</source>
+        <translation type="unfinished">Drehbuch</translation>
+    </message>
+    <message>
+        <source>{count} albums</source>
+        <translation type="unfinished">{count} Alben</translation>
+    </message>
+    <message>
+        <source>{count} movies</source>
+        <translation type="unfinished">{count} Filme</translation>
+    </message>
+    <message>
+        <source>{count} shows</source>
+        <translation type="unfinished">{count} Serien</translation>
+    </message>
+    <message>
+        <source>{count} titles</source>
+        <translation type="unfinished">{count} Titel</translation>
+    </message>
+    <message>
+        <source>TMDb</source>
+        <translation type="unfinished">TMDb</translation>
+    </message>
+    <message>
+        <source>{count} seasons</source>
+        <translation type="unfinished">{count} Staffeln</translation>
+    </message>
+    <message>
+        <source>{count} episodes</source>
+        <translation type="unfinished">{count} Episoden</translation>
+    </message>
+    <message>
+        <source>Show Missing Collection Items</source>
+        <translation type="unfinished">Fehlende Sammlungselemente anzeigen</translation>
+    </message>
+    <message>
+        <source>Include missing items on Collection pages</source>
+        <translation type="unfinished">Fehlende Elemente auf Sammlungsseiten einbeziehen</translation>
+    </message>
+    <message>
+        <source>Date Added: {0}</source>
+        <translation type="unfinished">Hinzugefügt am: {0}</translation>
+    </message>
+    <message>
+        <source>Direct Play Capability:</source>
+        <translation type="unfinished">Direct-Play-Fähigkeit:</translation>
+    </message>
+    <message>
+        <source>Show All ({0}) Audio Tracks</source>
+        <translation type="unfinished">Alle ({0}) Audiospuren anzeigen</translation>
+    </message>
+    <message>
+        <source>Show All ({0}) Subtitle Tracks</source>
+        <translation type="unfinished">Alle ({0}) Untertitelspuren anzeigen</translation>
+    </message>
+    <message>
+        <source>Audio codec ({0}) is not supported directly.</source>
+        <translation type="unfinished">Der Audiocodec ({0}) wird nicht direkt unterstützt.</translation>
+    </message>
+    <message>
+        <source>Audio channel count ({0}ch) exceeds the player limit.</source>
+        <translation type="unfinished">Die Anzahl der Audiokanäle ({0} Kanäle) überschreitet das Limit des Players.</translation>
+    </message>
+    <message>
+        <source>Tip: Adjust &apos;Maximum Audio Channels&apos; in Audio Preferences.</source>
+        <translation type="unfinished">Tipp: Passe „Max. Audiokanäle“ in den Audioeinstellungen an.</translation>
+    </message>
+    <message>
+        <source>Subtitle format ({0}) is not supported directly and must be burned in.</source>
+        <translation type="unfinished">Das Untertitelformat ({0}) wird nicht direkt unterstützt und muss eingebrannt werden.</translation>
+    </message>
+    <message>
+        <source>Tip: Enable &apos;Direct Play ASS Subtitles&apos; in Subtitle Preferences to play directly without transcoding.</source>
+        <translation type="unfinished">Tipp: Aktiviere „Direct Play für ASS-Untertitel“ in den Untertiteleinstellungen, um ohne Transkodierung direkt abzuspielen.</translation>
+    </message>
+    <message>
+        <source>Tip: Increase &apos;Maximum Bitrate&apos; in Video Playback Preferences to allow direct streaming.</source>
+        <translation type="unfinished">Tipp: Erhöhe „Maximale Bitrate“ in den Videowiedergabe-Einstellungen, um Direct Stream zu ermöglichen.</translation>
+    </message>
+    <message>
+        <source>File bitrate ({0}) exceeds the configured streaming limit ({1}).</source>
+        <translation type="unfinished">Die Bitrate der Datei ({0}) überschreitet das eingestellte Streaming-Limit ({1}).</translation>
+    </message>
+    <message>
+        <source>Video dynamic range (e.g. Dolby Vision / HDR) is not supported by this display.</source>
+        <translation type="unfinished">Der Dynamikumfang des Videos (z. B. Dolby Vision / HDR) wird von diesem Display nicht unterstützt.</translation>
+    </message>
+    <message>
+        <source>Video reference frames exceed player limits.</source>
+        <translation type="unfinished">Die Referenzframes des Videos überschreiten die Grenzen des Players.</translation>
+    </message>
+    <message>
+        <source>Interlaced video is not supported.</source>
+        <translation type="unfinished">Interlaced-Video wird nicht unterstützt.</translation>
+    </message>
+    <message>
+        <source>Secondary audio stream requires transcoding.</source>
+        <translation type="unfinished">Die zweite Audiospur erfordert Transkodierung.</translation>
+    </message>
+    <message>
+        <source>Direct play is not supported for this media format.</source>
+        <translation type="unfinished">Direct Play wird für dieses Medienformat nicht unterstützt.</translation>
+    </message>
+    <message>
+        <source>Choose how many buttons stay on screen before the rest move into More Actions</source>
+        <translation type="unfinished">Lege fest, wie viele Tasten angezeigt werden, bevor die übrigen unter „Weitere Aktionen“ landen</translation>
+    </message>
+    <message>
+        <source>{count} facts</source>
+        <translation type="unfinished">{count} Fakten</translation>
+    </message>
+    <message>
+        <source>{count} tags</source>
+        <translation type="unfinished">{count} Tags</translation>
+    </message>
+    <message>
+        <source>Seerr Availability</source>
+        <translation type="unfinished">Seerr-Verfügbarkeit</translation>
+    </message>
+    <message>
+        <source>January</source>
+        <translation type="unfinished">Januar</translation>
+    </message>
+    <message>
+        <source>February</source>
+        <translation type="unfinished">Februar</translation>
+    </message>
+    <message>
+        <source>March</source>
+        <translation type="unfinished">März</translation>
+    </message>
+    <message>
+        <source>April</source>
+        <translation type="unfinished">April</translation>
+    </message>
+    <message>
+        <source>June</source>
+        <translation type="unfinished">Juni</translation>
+    </message>
+    <message>
+        <source>July</source>
+        <translation type="unfinished">Juli</translation>
+    </message>
+    <message>
+        <source>August</source>
+        <translation type="unfinished">August</translation>
+    </message>
+    <message>
+        <source>September</source>
+        <translation type="unfinished">September</translation>
+    </message>
+    <message>
+        <source>October</source>
+        <translation type="unfinished">Oktober</translation>
+    </message>
+    <message>
+        <source>November</source>
+        <translation type="unfinished">November</translation>
+    </message>
+    <message>
+        <source>December</source>
+        <translation type="unfinished">Dezember</translation>
+    </message>
+    <message>
+        <source>Remove from Collection</source>
+        <translation type="unfinished">Aus Sammlung entfernen</translation>
+    </message>
+    <message>
+        <source>No collections found</source>
+        <translation type="unfinished">Keine Sammlungen gefunden</translation>
+    </message>
+    <message>
+        <source>New Collection</source>
+        <translation type="unfinished">Neue Sammlung</translation>
+    </message>
+    <message>
+        <source>Remove {item} from {collection}? The item stays in your library.</source>
+        <translation type="unfinished">{item} aus {collection} entfernen? Das Element bleibt in deiner Bibliothek.</translation>
+    </message>
+    <message>
+        <source>Failed to remove from collection: {error}</source>
+        <translation type="unfinished">Entfernen aus der Sammlung fehlgeschlagen: {error}</translation>
+    </message>
+    <message>
+        <source>Failed to update playlist: {error}</source>
+        <translation type="unfinished">Playlist konnte nicht aktualisiert werden: {error}</translation>
+    </message>
+    <message>
+        <source>Unauthorized</source>
+        <translation type="unfinished">Nicht autorisiert</translation>
+    </message>
+    <message>
+        <source>Forbidden</source>
+        <translation type="unfinished">Nicht erlaubt</translation>
+    </message>
+    <message>
+        <source>HTTP error</source>
+        <translation type="unfinished">HTTP-Fehler</translation>
+    </message>
+    <message>
+        <source>Metadata updated</source>
+        <translation type="unfinished">Metadaten aktualisiert</translation>
+    </message>
+    <message>
+        <source>Refreshing metadata</source>
+        <translation type="unfinished">Metadaten werden aktualisiert</translation>
+    </message>
+    <message>
+        <source>This profile is protected by a 4-digit PIN.</source>
+        <translation type="unfinished">Dieses Profil ist durch eine 4-stellige PIN geschützt.</translation>
+    </message>
+    <message>
+        <source>Unlock</source>
+        <translation type="unfinished">Freischalten</translation>
+    </message>
+    <message>
+        <source>PIN Code Protection</source>
+        <translation type="unfinished">PIN-Code-Schutz</translation>
+    </message>
+    <message>
+        <source>Enter a 4-digit PIN used to unlock the app when PIN protection is enabled.</source>
+        <translation type="unfinished">Gib eine 4-stellige PIN ein, mit der die App entsperrt wird, wenn der PIN-Schutz aktiviert ist.</translation>
+    </message>
+    <message>
+        <source>Remove &quot;{0}&quot; from your servers?</source>
+        <translation type="unfinished">„{0}“ aus deinen Servern entfernen?</translation>
+    </message>
+    <message>
+        <source>Checking {0}</source>
+        <translation type="unfinished">Prüfe {0}</translation>
+    </message>
+    <message>
+        <source>Check the address and port, and that the server is running.</source>
+        <translation>Überprüfe Adresse und Port und ob der Server läuft.</translation>
+    </message>
+    <message>
+        <source>Server found</source>
+        <translation type="unfinished">Server gefunden</translation>
+    </message>
+    <message>
+        <source>Emby</source>
+        <translation type="unfinished">Emby</translation>
+    </message>
+    <message>
+        <source>Silo</source>
+        <translation type="unfinished">Silo</translation>
+    </message>
+    <message>
+        <source>Version {0}</source>
+        <translation type="unfinished">Version {0}</translation>
+    </message>
+    <message>
+        <source>Continue to choose who&apos;s signing in.</source>
+        <translation>Fahre fort, um auszuwählen, wer sich anmeldet.</translation>
+    </message>
+    <message>
+        <source>Use a different address</source>
+        <translation type="unfinished">Andere Adresse verwenden</translation>
+    </message>
+    <message>
+        <source>Connecting to {0}</source>
+        <translation type="unfinished">Verbinde mit {0}</translation>
+    </message>
+    <message>
+        <source>Quick Connect is disabled</source>
+        <translation type="unfinished">Quick Connect ist deaktiviert</translation>
+    </message>
+    <message>
+        <source>The sign in request timed out. Try again.</source>
+        <translation type="unfinished">Zeitüberschreitung bei der Anmeldeanfrage. Versuche es erneut.</translation>
+    </message>
+    <message>
+        <source>Signed in as {0} on {1}</source>
+        <translation type="unfinished">Angemeldet als {0} auf {1}</translation>
+    </message>
+    <message>
+        <source>PIN synced</source>
+        <translation type="unfinished">PIN synchronisiert</translation>
+    </message>
+    <message>
+        <source>Enter your 4-digit PIN</source>
+        <translation type="unfinished">Gib deine 4-stellige PIN ein</translation>
+    </message>
+    <message>
+        <source>The PIN on the server couldn&apos;t be cleared. If it&apos;s still set, ask a server administrator to remove it.</source>
+        <translation type="unfinished">Die PIN auf dem Server konnte nicht entfernt werden. Falls sie noch gesetzt ist, bitte einen Server-Administrator, sie zu entfernen.</translation>
+    </message>
+    <message>
+        <source>Blocked Ratings</source>
+        <translation type="unfinished">Blockierte Altersfreigaben</translation>
+    </message>
+    <message>
+        <source>Only blocks itself</source>
+        <translation type="unfinished">Blockiert nur sich selbst</translation>
+    </message>
+    <message>
+        <source>This isn&apos;t available</source>
+        <translation type="unfinished">Das ist nicht verfügbar</translation>
+    </message>
+    <message>
+        <source>No program data</source>
+        <translation type="unfinished">Keine Programmdaten</translation>
+    </message>
+    <message>
+        <source>Favorites First</source>
+        <translation type="unfinished">Favoriten zuerst</translation>
+    </message>
+    <message>
+        <source>Select date</source>
+        <translation type="unfinished">Datum auswählen</translation>
+    </message>
+    <message>
+        <source>Sun</source>
+        <translation type="unfinished">So</translation>
+    </message>
+    <message>
+        <source>Mon</source>
+        <translation type="unfinished">Mo</translation>
+    </message>
+    <message>
+        <source>Tue</source>
+        <translation type="unfinished">Di</translation>
+    </message>
+    <message>
+        <source>Wed</source>
+        <translation type="unfinished">Mi</translation>
+    </message>
+    <message>
+        <source>Thu</source>
+        <translation type="unfinished">Do</translation>
+    </message>
+    <message>
+        <source>Fri</source>
+        <translation type="unfinished">Fr</translation>
+    </message>
+    <message>
+        <source>Sat</source>
+        <translation type="unfinished">Sa</translation>
+    </message>
+    <message>
+        <source>Watch channel live</source>
+        <translation type="unfinished">Kanal live ansehen</translation>
+    </message>
+    <message>
+        <source>Reconnecting… ({attempt} of {total})</source>
+        <translation>Verbindung wird wiederhergestellt… ({attempt} von {total})</translation>
+    </message>
+    <message>
+        <source>Cancel scheduled recording of {name}?</source>
+        <translation type="unfinished">Geplante Aufnahme von {name} abbrechen?</translation>
+    </message>
+    <message>
+        <source>Show Live TV Button</source>
+        <translation type="unfinished">Live-TV-Taste anzeigen</translation>
+    </message>
+    <message>
+        <source>Show the Live TV button in the navigation bar when the server has a Live TV library</source>
+        <translation type="unfinished">Die Live-TV-Taste in der Navigationsleiste anzeigen, wenn der Server eine Live-TV-Bibliothek hat</translation>
+    </message>
+    <message>
+        <source>Pause While Scrubbing</source>
+        <translation type="unfinished">Beim Spulen pausieren</translation>
+    </message>
+    <message>
+        <source>Playback pauses while you seek and resumes when you press play. Turn this off to keep playing and jump straight to the new spot</source>
+        <translation type="unfinished">Die Wiedergabe pausiert beim Spulen und läuft weiter, wenn du auf Abspielen drückst. Deaktiviere dies, um weiterzuspielen und direkt an die neue Stelle zu springen</translation>
+    </message>
+    <message>
+        <source>How far each press moves while scrubbing the progress bar</source>
+        <translation type="unfinished">Wie weit jeder Tastendruck beim Spulen in der Fortschrittsleiste springt</translation>
+    </message>
+    <message>
+        <source>Mark where each chapter starts on the seek bar</source>
+        <translation type="unfinished">Den Beginn jedes Kapitels in der Fortschrittsleiste markieren</translation>
+    </message>
+    <message>
+        <source>Light Gray</source>
+        <translation type="unfinished">Hellgrau</translation>
+    </message>
+    <message>
+        <source>Semi-transparent White</source>
+        <translation type="unfinished">Halbtransparentes Weiß</translation>
+    </message>
+    <message>
+        <source>Shadow Color</source>
+        <translation type="unfinished">Schattenfarbe</translation>
+    </message>
+    <message>
+        <source>Shadow Opacity</source>
+        <translation type="unfinished">Schattendeckkraft</translation>
+    </message>
+    <message>
+        <source>Shadow Size (Blur)</source>
+        <translation type="unfinished">Schattengröße (Unschärfe)</translation>
+    </message>
+    <message>
+        <source>HDR Subtitles</source>
+        <translation type="unfinished">HDR-Untertitel</translation>
+    </message>
+    <message>
+        <source>A separate style used while HDR is playing</source>
+        <translation type="unfinished">Ein eigener Stil, der während der HDR-Wiedergabe verwendet wird</translation>
+    </message>
+    <message>
+        <source>Use the style below whenever HDR content is playing. White is much brighter in HDR than in SDR, so a dimmer color here avoids the glare.</source>
+        <translation type="unfinished">Den Stil unten verwenden, wann immer HDR-Inhalte abgespielt werden. Weiß ist in HDR viel heller als in SDR, daher vermeidet eine dunklere Farbe hier die Blendung.</translation>
+    </message>
+    <message>
+        <source>Loading Animation Configuration</source>
+        <translation type="unfinished">Konfiguration der Ladeanimation</translation>
+    </message>
+    <message>
+        <source>Moonfin Logo</source>
+        <translation type="unfinished">Moonfin-Logo</translation>
+    </message>
+    <message>
+        <source>Spinner</source>
+        <translation type="unfinished">Ladekreis</translation>
+    </message>
+    <message>
+        <source>Runner</source>
+        <translation type="unfinished">Läufer</translation>
+    </message>
+    <message>
+        <source>Moon Phases</source>
+        <translation type="unfinished">Mondphasen</translation>
+    </message>
+    <message>
+        <source>Moonfin Phases</source>
+        <translation type="unfinished">Moonfin-Phasen</translation>
+    </message>
+    <message>
+        <source>Neonfin Phases</source>
+        <translation type="unfinished">Neonfin-Phasen</translation>
+    </message>
+    <message>
+        <source>Show Text?</source>
+        <translation type="unfinished">Text anzeigen?</translation>
+    </message>
+    <message>
+        <source>Loading Stream...</source>
+        <translation type="unfinished">Stream wird geladen...</translation>
+    </message>
+    <message>
+        <source>You do not have permission to search for subtitles</source>
+        <translation type="unfinished">Du hast keine Berechtigung, nach Untertiteln zu suchen</translation>
+    </message>
+    <message>
+        <source>No subtitle provider is set up on the server</source>
+        <translation type="unfinished">Auf dem Server ist kein Untertitelanbieter eingerichtet</translation>
+    </message>
+    <message>
+        <source>You do not have permission to download subtitles</source>
+        <translation type="unfinished">Du hast keine Berechtigung, Untertitel herunterzuladen</translation>
+    </message>
+    <message>
+        <source>That subtitle is no longer available</source>
+        <translation type="unfinished">Dieser Untertitel ist nicht mehr verfügbar</translation>
+    </message>
+    <message>
+        <source>Subtitle download failed</source>
+        <translation type="unfinished">Untertitel konnten nicht heruntergeladen werden</translation>
+    </message>
+    <message>
+        <source>The subtitle was downloaded but has not appeared yet</source>
+        <translation type="unfinished">Der Untertitel wurde heruntergeladen, wird aber noch nicht angezeigt</translation>
+    </message>
+    <message>
+        <source>Show or hide the clock in the top bar and the sidebar</source>
+        <translation type="unfinished">Die Uhr in der oberen Leiste und in der Seitenleiste ein- oder ausblenden</translation>
+    </message>
+    <message>
+        <source>Music Video Playlists</source>
+        <translation type="unfinished">Musikvideo-Playlists</translation>
+    </message>
+    <message>
+        <source>Search using OpenSubtitles</source>
+        <translation>Mit OpenSubtitles suchen</translation>
+    </message>
+    <message>
+        <source>Subtitle search failed</source>
+        <translation type="unfinished">Untertitelsuche fehlgeschlagen</translation>
+    </message>
+    <message>
+        <source>{fps} fps</source>
+        <translation type="unfinished">{fps} fps</translation>
+    </message>
+    <message>
+        <source>Trailers played behind the media bar</source>
+        <translation type="unfinished">Trailer, die hinter der Medienleiste abgespielt werden</translation>
+    </message>
+    <message>
+        <source>Mute Trailer Audio</source>
+        <translation type="unfinished">Trailer-Ton stummschalten</translation>
+    </message>
+    <message>
+        <source>Mute trailer previews in the featured media bar</source>
+        <translation type="unfinished">Trailer-Vorschauen in der Medienleiste stummschalten</translation>
+    </message>
+    <message>
+        <source>Show captions on media bar trailer previews when YouTube has them</source>
+        <translation type="unfinished">Untertitel bei Trailer-Vorschauen in der Medienleiste anzeigen, sofern YouTube welche hat</translation>
+    </message>
+    <message>
+        <source>Peek Home Rows</source>
+        <translation type="unfinished">Startseitenzeilen anschneiden</translation>
+    </message>
+    <message>
+        <source>Show the top half of the first row along the bottom of the media bar</source>
+        <translation type="unfinished">Die obere Hälfte der ersten Zeile am unteren Rand der Medienleiste anzeigen</translation>
+    </message>
+    <message>
+        <source>Trailer Not Available</source>
+        <translation type="unfinished">Trailer nicht verfügbar</translation>
+    </message>
+    <message>
+        <source>Subtitled</source>
+        <translation type="unfinished">Mit Untertiteln</translation>
+    </message>
+    <message>
+        <source>This trailer is a link to a web page, which cant be opened here.</source>
+        <translation type="unfinished">Dieser Trailer ist ein Link zu einer Webseite, die hier nicht geöffnet werden kann.</translation>
+    </message>
+    <message>
+        <source>Play a short clip or the trailer of the focused card after a moment on it. A series clip plays its next episode.</source>
+        <translation type="unfinished">Nach kurzem Verweilen auf einer Karte einen kurzen Clip oder den Trailer abspielen. Bei einer Serie wird ein Clip der nächsten Episode abgespielt.</translation>
+    </message>
+    <message>
+        <source>Play the sound of a media preview. Off keeps previews silent.</source>
+        <translation type="unfinished">Den Ton der Medienvorschau abspielen. Wenn deaktiviert, bleiben Vorschauen stumm.</translation>
+    </message>
+    <message>
+        <source>Seasonal Row</source>
+        <translation type="unfinished">Saisonale Zeile</translation>
+    </message>
+    <message>
+        <source>New Year&apos;s</source>
+        <translation type="unfinished">Neujahr</translation>
+    </message>
+    <message>
+        <source>Valentine&apos;s Day</source>
+        <translation type="unfinished">Valentinstag</translation>
+    </message>
+    <message>
+        <source>Easter</source>
+        <translation type="unfinished">Ostern</translation>
+    </message>
+    <message>
+        <source>Pride</source>
+        <translation type="unfinished">Pride</translation>
+    </message>
+    <message>
+        <source>Thanksgiving</source>
+        <translation type="unfinished">Thanksgiving</translation>
+    </message>
+    <message>
+        <source>Christmas Movies</source>
+        <translation>Weihnachtsfilme</translation>
+    </message>
+    <message>
+        <source>Lunar New Year</source>
+        <translation type="unfinished">Mondneujahr</translation>
+    </message>
+    <message>
+        <source>All holidays</source>
+        <translation type="unfinished">Alle Feiertage</translation>
+    </message>
+    <message>
+        <source>Library Order</source>
+        <translation type="unfinished">Reihenfolge der Bibliotheken</translation>
+    </message>
+    <message>
+        <source>Choose the order of your libraries</source>
+        <translation>Wähle die Reihenfolge deiner Bibliotheken</translation>
+    </message>
+    <message>
+        <source>Press left or right to move the highlighted library.</source>
+        <translation type="unfinished">Drücke links oder rechts, um die markierte Bibliothek zu verschieben.</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t save the library order</source>
+        <translation>Reihenfolge der Bibliotheken konnte nicht gespeichert werden</translation>
+    </message>
+    <message>
+        <source>Sections</source>
+        <translation type="unfinished">Bereiche</translation>
+    </message>
+    <message>
+        <source>Choose which parts of the Details screen to show</source>
+        <translation>Angezeigte Bereiche der Detailansicht festlegen</translation>
+    </message>
+    <message>
+        <source>Only the sections the current Details screen style can show</source>
+        <translation type="unfinished">Es werden nur die Bereiche aufgelistet, die der aktuelle Stil</translation>
+    </message>
+    <message>
+        <source>are listed. Hiding one hides it in every style that has it.</source>
+        <translation type="unfinished">der Detailansicht anzeigen kann. Wenn du einen ausblendest, wird er in allen Stilen ausgeblendet, die ihn enthalten.</translation>
+    </message>
+    <message>
+        <source>Header</source>
+        <translation type="unfinished">Kopfbereich</translation>
+    </message>
+    <message>
+        <source>Person pages</source>
+        <translation type="unfinished">Personenseiten</translation>
+    </message>
+    <message>
+        <source>Shows the title as text when off</source>
+        <translation type="unfinished">Zeigt den Titel als Text an, wenn deaktiviert</translation>
+    </message>
+    <message>
+        <source>Directors &amp; writers</source>
+        <translation type="unfinished">Regie &amp; Drehbuch</translation>
+    </message>
+    <message>
+        <source>More episodes</source>
+        <translation type="unfinished">Weitere Episoden</translation>
+    </message>
+    <message>
+        <source>On episode pages</source>
+        <translation type="unfinished">Auf Episodenseiten</translation>
+    </message>
+    <message>
+        <source>Media info</source>
+        <translation type="unfinished">Medieninfo</translation>
+    </message>
+    <message>
+        <source>Version badge</source>
+        <translation type="unfinished">Versionsabzeichen</translation>
+    </message>
+    <message>
+        <source>File, streams and Direct Play check</source>
+        <translation type="unfinished">Datei, Streams und Direct-Play-Prüfung</translation>
+    </message>
+    <message>
+        <source>Genres &amp; tags</source>
+        <translation type="unfinished">Genres &amp; Tags</translation>
+    </message>
+    <message>
+        <source>Streaming services</source>
+        <translation type="unfinished">Streamingdienste</translation>
+    </message>
+    <message>
+        <source>Similar titles</source>
+        <translation type="unfinished">Ähnliche Titel</translation>
+    </message>
+    <message>
+        <source>Collection banner</source>
+        <translation>Sammlungsbanner</translation>
+    </message>
+    <message>
+        <source>On person pages</source>
+        <translation type="unfinished">Auf Personenseiten</translation>
+    </message>
+    <message>
+        <source>Crew credits</source>
+        <translation type="unfinished">Mitwirkende hinter der Kamera</translation>
+    </message>
+    <message>
+        <source>Guest appearances</source>
+        <translation type="unfinished">Gastauftritte</translation>
+    </message>
+    <message>
+        <source>Music videos</source>
+        <translation type="unfinished">Musikvideos</translation>
+    </message>
+    <message>
+        <source>Playback languages</source>
+        <translation type="unfinished">Wiedergabesprachen</translation>
+    </message>
+    <message>
+        <source>Optional</source>
+        <translation type="unfinished">Optional</translation>
+    </message>
+    <message>
+        <source>Pick the track the file marks as default before matching languages</source>
+        <translation type="unfinished">Vor dem Sprachabgleich die Spur wählen, die in der Datei als Standard markiert ist</translation>
+    </message>
+    <message>
+        <source>Unlock notifications</source>
+        <translation type="unfinished">Freischalt-Benachrichtigungen</translation>
+    </message>
+    <message>
+        <source>Show a notification when you unlock a badge</source>
+        <translation type="unfinished">Eine Benachrichtigung anzeigen, wenn du ein Abzeichen freischaltest</translation>
+    </message>
+    <message>
+        <source>Could not save your settings.</source>
+        <translation>Deine Einstellungen konnten nicht gespeichert werden.</translation>
+    </message>
+    <message>
+        <source>{0} achievements unlocked</source>
+        <translation type="unfinished">{0} Erfolge freigeschaltet</translation>
+    </message>
+    <message>
+        <source>+{0} more</source>
+        <translation type="unfinished">+{0} weitere</translation>
+    </message>
+    <message>
+        <source>Show friends button</source>
+        <translation type="unfinished">Freunde-Taste anzeigen</translation>
+    </message>
+    <message>
+        <source>Friends and chat from the Achievement Badges plugin</source>
+        <translation type="unfinished">Freunde und Chat aus dem Achievement-Badges-Plugin</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation type="unfinished">Freunde</translation>
+    </message>
+    <message>
+        <source>See who&apos;s online and chat with people on this server</source>
+        <translation type="unfinished">Sieh, wer online ist, und chatte mit Personen auf diesem Server</translation>
+    </message>
+    <message>
+        <source>Friend requests</source>
+        <translation type="unfinished">Freundschaftsanfragen</translation>
+    </message>
+    <message>
+        <source>Privacy</source>
+        <translation type="unfinished">Datenschutz</translation>
+    </message>
+    <message>
+        <source>New message</source>
+        <translation type="unfinished">Neue Nachricht</translation>
+    </message>
+    <message>
+        <source>New group</source>
+        <translation type="unfinished">Neue Gruppe</translation>
+    </message>
+    <message>
+        <source>Group info</source>
+        <translation type="unfinished">Gruppeninfo</translation>
+    </message>
+    <message>
+        <source>That didn&apos;t work. Try again in a moment.</source>
+        <translation type="unfinished">Das hat nicht funktioniert. Versuche es gleich noch einmal.</translation>
+    </message>
+    <message>
+        <source>Request sent to {0}</source>
+        <translation type="unfinished">Anfrage an {0} gesendet</translation>
+    </message>
+    <message>
+        <source>Watching {0}</source>
+        <translation type="unfinished">Schaut {0}</translation>
+    </message>
+    <message>
+        <source>Online</source>
+        <translation type="unfinished">Online</translation>
+    </message>
+    <message>
+        <source>Last watched {0}</source>
+        <translation type="unfinished">Zuletzt geschaut: {0}</translation>
+    </message>
+    <message>
+        <source>Last seen {0}</source>
+        <translation type="unfinished">Zuletzt gesehen {0}</translation>
+    </message>
+    <message>
+        <source>Offline</source>
+        <translation type="unfinished">Offline</translation>
+    </message>
+    <message>
+        <source>No unread messages</source>
+        <translation type="unfinished">Keine ungelesenen Nachrichten</translation>
+    </message>
+    <message>
+        <source>{0} unread messages</source>
+        <translation type="unfinished">{0} ungelesene Nachrichten</translation>
+    </message>
+    <message>
+        <source>Nothing waiting</source>
+        <translation type="unfinished">Nichts ausstehend</translation>
+    </message>
+    <message>
+        <source>{0} waiting for you</source>
+        <translation type="unfinished">{0} warten auf dich</translation>
+    </message>
+    <message>
+        <source>You: {0}</source>
+        <translation type="unfinished">Du: {0}</translation>
+    </message>
+    <message>
+        <source>Could not load this. Check your connection and try again.</source>
+        <translation>Laden fehlgeschlagen. Überprüfe deine Verbindung und versuche es erneut.</translation>
+    </message>
+    <message>
+        <source>Find people on this server</source>
+        <translation type="unfinished">Personen auf diesem Server finden</translation>
+    </message>
+    <message>
+        <source>What your friends can see</source>
+        <translation type="unfinished">Was deine Freunde sehen können</translation>
+    </message>
+    <message>
+        <source>No friends yet. Add people from this server to see them here.</source>
+        <translation type="unfinished">Noch keine Freunde. Füge Personen von diesem Server hinzu, um sie hier zu sehen.</translation>
+    </message>
+    <message>
+        <source>{0} keeps their profile private.</source>
+        <translation type="unfinished">{0} hält das eigene Profil privat.</translation>
+    </message>
+    <message>
+        <source>Best streak: {0} days</source>
+        <translation type="unfinished">Bester Streak: {0} Tage</translation>
+    </message>
+    <message>
+        <source>Showcase</source>
+        <translation type="unfinished">Präsentation</translation>
+    </message>
+    <message>
+        <source>Remove {0} from your friends? You can add them again later.</source>
+        <translation type="unfinished">{0} aus deinen Freunden entfernen? Du kannst die Person später wieder hinzufügen.</translation>
+    </message>
+    <message>
+        <source>Remove friend</source>
+        <translation type="unfinished">Freund entfernen</translation>
+    </message>
+    <message>
+        <source>Unblock {0}?</source>
+        <translation type="unfinished">Blockierung von {0} aufheben?</translation>
+    </message>
+    <message>
+        <source>Unblock</source>
+        <translation type="unfinished">Blockierung aufheben</translation>
+    </message>
+    <message>
+        <source>Block {0}? Neither of you will be able to message the other directly. Group chats you share stay open.</source>
+        <translation type="unfinished">{0} blockieren? Ihr könnt euch dann keine Direktnachrichten mehr schicken. Gemeinsame Gruppenchats bleiben bestehen.</translation>
+    </message>
+    <message>
+        <source>Send message</source>
+        <translation type="unfinished">Nachricht senden</translation>
+    </message>
+    <message>
+        <source>Open {0}</source>
+        <translation type="unfinished">{0} öffnen</translation>
+    </message>
+    <message>
+        <source>No friend requests.</source>
+        <translation type="unfinished">Keine Freundschaftsanfragen.</translation>
+    </message>
+    <message>
+        <source>Waiting for you</source>
+        <translation type="unfinished">Wartet auf dich</translation>
+    </message>
+    <message>
+        <source>{0} wants to be friends</source>
+        <translation type="unfinished">{0} möchte mit dir befreundet sein</translation>
+    </message>
+    <message>
+        <source>Sent by you</source>
+        <translation type="unfinished">Von dir gesendet</translation>
+    </message>
+    <message>
+        <source>Cancel request</source>
+        <translation>Anfrage abbrechen</translation>
+    </message>
+    <message>
+        <source>Take back the request you sent to {0}?</source>
+        <translation type="unfinished">Die Anfrage an {0} zurückziehen?</translation>
+    </message>
+    <message>
+        <source>Search people</source>
+        <translation type="unfinished">Personen suchen</translation>
+    </message>
+    <message>
+        <source>No one matches that name.</source>
+        <translation type="unfinished">Niemand passt zu diesem Namen.</translation>
+    </message>
+    <message>
+        <source>Mute during playback</source>
+        <translation type="unfinished">Während der Wiedergabe stummschalten</translation>
+    </message>
+    <message>
+        <source>No message banners while a video is playing</source>
+        <translation type="unfinished">Keine Nachrichtenbanner, während ein Video läuft</translation>
+    </message>
+    <message>
+        <source>Friends always see you as offline</source>
+        <translation type="unfinished">Freunde sehen dich immer als offline</translation>
+    </message>
+    <message>
+        <source>Hide what I&apos;m watching</source>
+        <translation type="unfinished">Verbergen, was ich schaue</translation>
+    </message>
+    <message>
+        <source>Friends still see you online, but not what&apos;s playing</source>
+        <translation type="unfinished">Freunde sehen dich weiterhin online, aber nicht, was gerade läuft</translation>
+    </message>
+    <message>
+        <source>Hide my last watched</source>
+        <translation type="unfinished">Zuletzt Gesehenes verbergen</translation>
+    </message>
+    <message>
+        <source>Friends won&apos;t see what you watched last while you&apos;re offline</source>
+        <translation type="unfinished">Freunde sehen nicht, was du zuletzt geschaut hast, während du offline bist</translation>
+    </message>
+    <message>
+        <source>Message notifications</source>
+        <translation type="unfinished">Nachrichtenbenachrichtigungen</translation>
+    </message>
+    <message>
+        <source>Show a banner when a friend messages you</source>
+        <translation type="unfinished">Ein Banner anzeigen, wenn dir ein Freund schreibt</translation>
+    </message>
+    <message>
+        <source>Start a chat with a friend</source>
+        <translation type="unfinished">Einen Chat mit einem Freund beginnen</translation>
+    </message>
+    <message>
+        <source>Chat with several friends at once</source>
+        <translation>Mit mehreren Freunden gleichzeitig chatten</translation>
+    </message>
+    <message>
+        <source>No messages yet.</source>
+        <translation type="unfinished">Noch keine Nachrichten.</translation>
+    </message>
+    <message>
+        <source>Pick at least two friends</source>
+        <translation type="unfinished">Wähle mindestens zwei Freunde aus</translation>
+    </message>
+    <message>
+        <source>Seen</source>
+        <translation type="unfinished">Gesehen</translation>
+    </message>
+    <message>
+        <source>Sent</source>
+        <translation type="unfinished">Gesendet</translation>
+    </message>
+    <message>
+        <source>Delete this message for everyone?</source>
+        <translation type="unfinished">Diese Nachricht für alle löschen?</translation>
+    </message>
+    <message>
+        <source>Editing message</source>
+        <translation type="unfinished">Nachricht bearbeiten</translation>
+    </message>
+    <message>
+        <source>{0} members</source>
+        <translation type="unfinished">{0} Mitglieder</translation>
+    </message>
+    <message>
+        <source>Owner</source>
+        <translation type="unfinished">Besitzer</translation>
+    </message>
+    <message>
+        <source>Remove admin</source>
+        <translation type="unfinished">Admin-Rechte entziehen</translation>
+    </message>
+    <message>
+        <source>Make admin</source>
+        <translation type="unfinished">Zum Admin machen</translation>
+    </message>
+    <message>
+        <source>Remove from group</source>
+        <translation type="unfinished">Aus Gruppe entfernen</translation>
+    </message>
+    <message>
+        <source>No one left to add.</source>
+        <translation type="unfinished">Niemand mehr zum Hinzufügen.</translation>
+    </message>
+    <message>
+        <source>Clear conversation</source>
+        <translation>Unterhaltung löschen</translation>
+    </message>
+    <message>
+        <source>Leave this group? Someone will have to add you back to rejoin.</source>
+        <translation type="unfinished">Diese Gruppe verlassen? Jemand muss dich wieder hinzufügen, damit du erneut beitreten kannst.</translation>
+    </message>
+    <message>
+        <source>Delete every message in this chat for everyone in it?</source>
+        <translation type="unfinished">Alle Nachrichten in diesem Chat für alle Teilnehmer löschen?</translation>
+    </message>
+    <message>
+        <source>New message from {0}</source>
+        <translation type="unfinished">Neue Nachricht von {0}</translation>
+    </message>
+    <message>
+        <source>Christmas</source>
+        <translation>Weihnachten</translation>
+    </message>
+    <message>
+        <source>Spring Petals</source>
+        <translation type="unfinished">Frühlingsblüten</translation>
+    </message>
+    <message>
+        <source>Fireflies</source>
+        <translation type="unfinished">Glühwürmchen</translation>
+    </message>
+    <message>
+        <source>Density</source>
+        <translation type="unfinished">Dichte</translation>
+    </message>
+    <message>
+        <source>Focus Follower</source>
+        <translation type="unfinished">Fokus-Begleiter</translation>
+    </message>
+    <message>
+        <source>A holiday piece, like Halloween&apos;s planchette, follows what you select on Home</source>
+        <translation type="unfinished">Ein Feiertagsmotiv, z. B. die Planchette zu Halloween, folgt deiner Auswahl auf der Startseite</translation>
+    </message>
+    <message>
+        <source>Cinema Mode Skip Button</source>
+        <translation>Überspringen-Taste im Kinomodus</translation>
+    </message>
+    <message>
+        <source>Show a Skip button during Cinema Mode trailers, commercials, and other pre-rolls.</source>
+        <translation type="unfinished">Während Trailern, Werbung und anderen Vorspännen im Kinomodus eine Überspringen-Taste anzeigen.</translation>
+    </message>
+    <message>
+        <source>Transcode Audio Codecs</source>
+        <translation type="unfinished">Audiocodecs transkodieren</translation>
+    </message>
+    <message>
+        <source>The server converts audio in these formats instead of sending it as is.</source>
+        <translation type="unfinished">Der Server konvertiert Audio in diesen Formaten, statt es unverändert zu senden.</translation>
+    </message>
+    <message>
+        <source>Languages to search when downloading subtitles, up to 5. With none ticked, the default subtitle language is searched, or one language is picked from the video when that is not set.</source>
+        <translation type="unfinished">Sprachen, nach denen beim Herunterladen von Untertiteln gesucht wird, bis zu 5. Ist keine ausgewählt, wird nach der Standard-Untertitelsprache gesucht oder, falls diese nicht festgelegt ist, eine Sprache aus dem Video gewählt.</translation>
+    </message>
+    <message>
+        <source>Server Plugin Sync</source>
+        <translation type="unfinished">Server-Plugin-Synchronisierung</translation>
+    </message>
+    <message>
+        <source>Sync status, profile, load, save and reset</source>
+        <translation type="unfinished">Synchronisierungsstatus, Profil, Laden, Speichern und Zurücksetzen</translation>
+    </message>
+    <message>
+        <source>This device syncs with the profile you pick until you pick another.</source>
+        <translation type="unfinished">Dieses Gerät synchronisiert sich mit dem gewählten Profil, bis du ein anderes wählst.</translation>
+    </message>
+    <message>
+        <source>Overrides Global</source>
+        <translation type="unfinished">Überschreibt Global</translation>
+    </message>
+    <message>
+        <source>This device</source>
+        <translation type="unfinished">Dieses Gerät</translation>
+    </message>
+    <message>
+        <source>Load</source>
+        <translation type="unfinished">Laden</translation>
+    </message>
+    <message>
+        <source>Server to this device</source>
+        <translation type="unfinished">Server zu diesem Gerät</translation>
+    </message>
+    <message>
+        <source>This device to server</source>
+        <translation type="unfinished">Dieses Gerät zum Server</translation>
+    </message>
+    <message>
+        <source>Reset {0} Profile</source>
+        <translation type="unfinished">Profil {0} zurücksetzen</translation>
+    </message>
+    <message>
+        <source>Connected, version {0}</source>
+        <translation type="unfinished">Verbunden, Version {0}</translation>
+    </message>
+    <message>
+        <source>Install Moonbase on your server and turn on Enable Plugin.</source>
+        <translation type="unfinished">Installiere Moonbase auf deinem Server und aktiviere „Plugin aktivieren“.</translation>
+    </message>
+    <message>
+        <source>Settings sync is turned off on the server.</source>
+        <translation type="unfinished">Die Einstellungssynchronisierung ist auf dem Server deaktiviert.</translation>
+    </message>
+    <message>
+        <source>Sync on</source>
+        <translation type="unfinished">Synchronisierung an</translation>
+    </message>
+    <message>
+        <source>Sync off</source>
+        <translation type="unfinished">Synchronisierung aus</translation>
+    </message>
+    <message>
+        <source>Reset the {0} profile?</source>
+        <translation type="unfinished">Profil {0} zurücksetzen?</translation>
+    </message>
+    <message>
+        <source>The server forgets what this profile holds, and every synced setting on this device goes back to its default.</source>
+        <translation type="unfinished">Der Server vergisst, was dieses Profil enthält, und alle synchronisierten Einstellungen auf diesem Gerät werden auf den Standard zurückgesetzt.</translation>
+    </message>
+    <message>
+        <source>The server forgets every profile it holds for you, and every synced setting on this device goes back to its default.</source>
+        <translation type="unfinished">Der Server vergisst alle Profile, die er für dich speichert, und alle synchronisierten Einstellungen auf diesem Gerät werden auf den Standard zurückgesetzt.</translation>
+    </message>
+    <message>
+        <source>Loaded the {0} profile</source>
+        <translation type="unfinished">Profil {0} geladen</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t load settings from the server</source>
+        <translation type="unfinished">Die Einstellungen konnten nicht vom Server geladen werden</translation>
+    </message>
+    <message>
+        <source>Saved to the {0} profile</source>
+        <translation type="unfinished">Im Profil {0} gespeichert</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t save settings to the server</source>
+        <translation type="unfinished">Die Einstellungen konnten nicht auf dem Server gespeichert werden</translation>
+    </message>
+    <message>
+        <source>Reset the {0} profile</source>
+        <translation type="unfinished">Profil {0} zurückgesetzt</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t reset the {0} profile</source>
+        <translation type="unfinished">Profil {0} konnte nicht zurückgesetzt werden</translation>
+    </message>
+    <message>
+        <source>Scan with your phone to open this link</source>
+        <translation type="unfinished">Mit dem Handy scannen, um diesen Link zu öffnen</translation>
+    </message>
+    <message>
+        <source>COLLECTIONS</source>
+        <translation>SAMMLUNGEN</translation>
+    </message>
+    <message>
+        <source>CONTINUE WATCHING AND NEXT UP</source>
+        <translation>WEITERSCHAUEN UND ALS NÄCHSTES</translation>
+    </message>
+    <message>
+        <source>Capture media, login and network logs and send them to the server as a report</source>
+        <translation>Medien-, Anmelde- und Netzwerkprotokolle erfassen und als Bericht an den Server senden</translation>
+    </message>
+    <message>
+        <source>Choose and reorder what metadata the details screen shows</source>
+        <translation>Wähle und sortiere, welche Metadaten in der Detailansicht angezeigt werden</translation>
+    </message>
+    <message>
+        <source>Controls, seeking, player buttons, and trick play</source>
+        <translation>Steuerelemente, Spulen, Player-Tasten und Vorschaubilder beim Spulen</translation>
+    </message>
+    <message>
+        <source>Customize how many action buttons appear before folding into the More Actions menu.</source>
+        <translation type="unfinished">Lege fest, wie viele Aktionstasten angezeigt werden, bevor sie im Menü „Weitere Aktionen“ zusammengefasst werden.</translation>
+    </message>
+    <message>
+        <source>FAVORITES</source>
+        <translation type="unfinished">FAVORITEN</translation>
+    </message>
+    <message>
+        <source>GENRES</source>
+        <translation type="unfinished">GENRES</translation>
+    </message>
+    <message>
+        <source>Home Screen Backdrop</source>
+        <translation type="unfinished">Hintergrund der Startseite</translation>
+    </message>
+    <message>
+        <source>Corner</source>
+        <translation type="unfinished">Ecke</translation>
+    </message>
+    <message>
+        <source>Top</source>
+        <translation type="unfinished">Oben</translation>
+    </message>
+    <message>
+        <source>Include Collections</source>
+        <translation type="unfinished">Sammlungen einbeziehen</translation>
+    </message>
+    <message>
+        <source>Include Movies</source>
+        <translation type="unfinished">Filme einbeziehen</translation>
+    </message>
+    <message>
+        <source>Include Shows</source>
+        <translation type="unfinished">Serien einbeziehen</translation>
+    </message>
+    <message>
+        <source>Library Backdrops</source>
+        <translation type="unfinished">Bibliothekshintergründe</translation>
+    </message>
+    <message>
+        <source>Logging</source>
+        <translation type="unfinished">Protokollierung</translation>
+    </message>
+    <message>
+        <source>Moonbase plugin sync and customization profiles</source>
+        <translation type="unfinished">Moonbase-Plugin-Synchronisierung und Anpassungsprofile</translation>
+    </message>
+    <message>
+        <source>Moonfin scores your own library, Server takes the picks from your media server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</source>
+        <translation type="unfinished">„Moonfin“ bewertet deine eigene Bibliothek, „Server“ übernimmt die Vorschläge deines Medienservers, „TMDb“ nutzt Seerr und „Hybrid“ beginnt mit dem Server und ergänzt lokal</translation>
+    </message>
+    <message>
+        <source>Navigation, home screen, libraries, details page, and themes</source>
+        <translation type="unfinished">Navigation, Startseite, Bibliotheken, Detailseite und Themes</translation>
+    </message>
+    <message>
+        <source>Only the sections the current Details screen style can show are listed. Hiding one hides it in every style that has it.</source>
+        <translation type="unfinished">Es werden nur die Bereiche aufgelistet, die der aktuelle Stil der Detailansicht anzeigen kann. Wenn du einen ausblendest, wird er in allen Stilen ausgeblendet, die ihn enthalten.</translation>
+    </message>
+    <message>
+        <source>PLAYLISTS</source>
+        <translation type="unfinished">PLAYLISTS</translation>
+    </message>
+    <message>
+        <source>Play is always first. Everything else is up to you.</source>
+        <translation type="unfinished">„Abspielen“ steht immer an erster Stelle. Alles andere bestimmst du.</translation>
+    </message>
+    <message>
+        <source>Playback controls are always shown. Everything below is up to you.</source>
+        <translation type="unfinished">Die Wiedergabesteuerung wird immer angezeigt. Alles darunter bestimmst du.</translation>
+    </message>
+    <message>
+        <source>Press left or right to move the highlighted button.</source>
+        <translation type="unfinished">Drücke links oder rechts, um die markierte Taste zu verschieben.</translation>
+    </message>
+    <message>
+        <source>RECENTLY ADDED AND RELEASED</source>
+        <translation type="unfinished">KÜRZLICH HINZUGEFÜGT UND ERSCHIENEN</translation>
+    </message>
+    <message>
+        <source>REWATCH</source>
+        <translation type="unfinished">NOCH EINMAL ANSEHEN</translation>
+    </message>
+    <message>
+        <source>Read the recorded log and send a report</source>
+        <translation type="unfinished">Das aufgezeichnete Protokoll lesen und einen Bericht senden</translation>
+    </message>
+    <message>
+        <source>Replace thumbnails on the details page with the series thumbnail</source>
+        <translation type="unfinished">Vorschaubilder auf der Detailseite durch das Vorschaubild der Serie ersetzen</translation>
+    </message>
+    <message>
+        <source>Reports</source>
+        <translation type="unfinished">Berichte</translation>
+    </message>
+    <message>
+        <source>Roger Ebert</source>
+        <translation type="unfinished">Roger Ebert</translation>
+    </message>
+    <message>
+        <source>SINCE YOU WATCHED</source>
+        <translation type="unfinished">WEIL DU GESCHAUT HAST</translation>
+    </message>
+    <message>
+        <source>STUDIOS</source>
+        <translation type="unfinished">STUDIOS</translation>
+    </message>
+    <message>
+        <source>Send Crash Reports to Server</source>
+        <translation type="unfinished">Absturzberichte an den Server senden</translation>
+    </message>
+    <message>
+        <source>Show Friends Button</source>
+        <translation type="unfinished">Freunde-Taste anzeigen</translation>
+    </message>
+    <message>
+        <source>Show Rewatch row in Home Sections</source>
+        <translation type="unfinished">Zeile „Noch einmal ansehen“ in den Startseitenbereichen anzeigen</translation>
+    </message>
+    <message>
+        <source>Show captions on YouTube trailers</source>
+        <translation type="unfinished">Untertitel bei YouTube-Trailern anzeigen</translation>
+    </message>
+    <message>
+        <source>Show the Seerr status on posters and seasons across the app</source>
+        <translation type="unfinished">Den Seerr-Status in der ganzen App auf Postern und Staffeln anzeigen</translation>
+    </message>
+    <message>
+        <source>Show watched TV shows in the rewatch row</source>
+        <translation type="unfinished">Gesehene Serien in der Zeile „Noch einmal ansehen“ anzeigen</translation>
+    </message>
+    <message>
+        <source>Show watched collections in the rewatch row</source>
+        <translation type="unfinished">Gesehene Sammlungen in der Zeile „Noch einmal ansehen“ anzeigen</translation>
+    </message>
+    <message>
+        <source>Show watched movies in the rewatch row</source>
+        <translation type="unfinished">Gesehene Filme in der Zeile „Noch einmal ansehen“ anzeigen</translation>
+    </message>
+    <message>
+        <source>Sign-in, PIN code, Kids Mode, parental controls, and settings sync</source>
+        <translation type="unfinished">Anmeldung, PIN-Code, Kindermodus, Jugendschutz und Einstellungssynchronisierung</translation>
+    </message>
+    <message>
+        <source>Audio Rows Sorting</source>
+        <translation type="unfinished">Sortierung der Audiozeilen</translation>
+    </message>
+    <message>
+        <source>Choose what the Radarr and Sonarr rows show.</source>
+        <translation type="unfinished">Wähle, was die Radarr- und Sonarr-Zeilen anzeigen.</translation>
+    </message>
+    <message>
+        <source>Turn metadata items on or off, and arrange the order they appear on the details screen.</source>
+        <translation type="unfinished">Metadaten ein- oder ausblenden und ihre Reihenfolge in der Detailansicht festlegen.</translation>
+    </message>
+    <message>
+        <source>Turn rows on or off and change their order</source>
+        <translation type="unfinished">Zeilen ein- oder ausblenden und ihre Reihenfolge ändern</translation>
+    </message>
+    <message>
+        <source>Rows</source>
+        <translation type="unfinished">Zeilen</translation>
+    </message>
+    <message>
+        <source>Genres and Studios</source>
+        <translation type="unfinished">Genres und Studios</translation>
+    </message>
+    <message>
+        <source>Lossless</source>
+        <translation type="unfinished">Verlustfrei</translation>
+    </message>
+    <message>
+        <source>Collections row</source>
+        <translation>Sammlungszeile</translation>
+    </message>
+    <message>
+        <source>Collections row from {0}</source>
+        <translation type="unfinished">Sammlungszeile von {0}</translation>
+    </message>
+    <message>
+        <source>Genres row</source>
+        <translation type="unfinished">Genrezeile</translation>
+    </message>
+    <message>
+        <source>Playlists row</source>
+        <translation type="unfinished">Playlist-Zeile</translation>
+    </message>
+    <message>
+        <source>Program</source>
+        <translation type="unfinished">Sendung</translation>
+    </message>
+    <message>
+        <source>Why</source>
+        <translation type="unfinished">Warum</translation>
+    </message>
+    <message>
+        <source>Quality Limit</source>
+        <translation type="unfinished">Qualitätslimit</translation>
+    </message>
+    <message>
+        <source>Frame Rate</source>
+        <translation type="unfinished">Bildrate</translation>
+    </message>
+    <message>
+        <source>File</source>
+        <translation type="unfinished">Datei</translation>
+    </message>
+    <message>
+        <source>Technical</source>
+        <translation type="unfinished">Technisch</translation>
+    </message>
+    <message>
+        <source>{count} channels</source>
+        <translation type="unfinished">{count} Kanäle</translation>
+    </message>
+    <message>
+        <source>Burned in by the server</source>
+        <translation>Vom Server eingebrannt</translation>
+    </message>
+    <message>
+        <source>{value} (original {original})</source>
+        <translation type="unfinished">{value} (Original {original})</translation>
+    </message>
+    <message>
+        <source>{value} (converted from {source})</source>
+        <translation type="unfinished">{value} (konvertiert von {source})</translation>
+    </message>
+    <message>
+        <source>{value} ({size}, converted from {source})</source>
+        <translation type="unfinished">{value} ({size}, konvertiert von {source})</translation>
+    </message>
+    <message>
+        <source>Playing the original file as is.</source>
+        <translation type="unfinished">Die Originaldatei wird unverändert abgespielt.</translation>
+    </message>
+    <message>
+        <source>The server is repackaging the file without converting it.</source>
+        <translation type="unfinished">Der Server verpackt die Datei neu, ohne sie zu konvertieren.</translation>
+    </message>
+    <message>
+        <source>The server is converting the video so this device can play it.</source>
+        <translation type="unfinished">Der Server konvertiert das Video, damit dieses Gerät es abspielen kann.</translation>
+    </message>
+    <message>
+        <source>The server is converting the audio so this device can play it.</source>
+        <translation type="unfinished">Der Server konvertiert das Audio, damit dieses Gerät es abspielen kann.</translation>
+    </message>
+    <message>
+        <source>The server is converting the video and audio so this device can play it.</source>
+        <translation type="unfinished">Der Server konvertiert Video und Audio, damit dieses Gerät es abspielen kann.</translation>
+    </message>
+    <message>
+        <source>The server is converting this file so this device can play it.</source>
+        <translation type="unfinished">Der Server konvertiert diese Datei, damit dieses Gerät sie abspielen kann.</translation>
+    </message>
+    <message>
+        <source>Transcoding is forced in settings</source>
+        <translation type="unfinished">Transkodierung ist in den Einstellungen erzwungen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play this file type</source>
+        <translation type="unfinished">Dieses Gerät kann diesen Dateityp nicht abspielen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play this video format</source>
+        <translation type="unfinished">Dieses Gerät kann dieses Videoformat nicht abspielen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t display this HDR format</source>
+        <translation type="unfinished">Dieses Gerät kann dieses HDR-Format nicht anzeigen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play this audio format</source>
+        <translation type="unfinished">Dieses Gerät kann dieses Audioformat nicht abspielen</translation>
+    </message>
+    <message>
+        <source>Subtitles are being burned into the video</source>
+        <translation type="unfinished">Untertitel werden ins Video eingebrannt</translation>
+    </message>
+    <message>
+        <source>The file couldn&apos;t be played directly</source>
+        <translation type="unfinished">Die Datei konnte nicht direkt abgespielt werden</translation>
+    </message>
+    <message>
+        <source>{bitrate} is above the {limit} streaming limit</source>
+        <translation type="unfinished">{bitrate} liegt über dem Streaming-Limit von {limit}</translation>
+    </message>
+    <message>
+        <source>The bitrate is above the streaming limit</source>
+        <translation type="unfinished">Die Bitrate liegt über dem Streaming-Limit</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t open {container} files</source>
+        <translation type="unfinished">Dieses Gerät kann keine {container}-Dateien öffnen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {codec} video</source>
+        <translation type="unfinished">Dieses Gerät kann kein {codec}-Video abspielen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {codec} {profile} video</source>
+        <translation type="unfinished">Dieses Gerät kann kein {codec}-{profile}-Video abspielen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {codec} level {level} video</source>
+        <translation type="unfinished">Dieses Gerät kann kein {codec}-Video mit Level {level} abspielen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {bits}-bit video</source>
+        <translation type="unfinished">Dieses Gerät kann kein {bits}-Bit-Video abspielen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {resolution} video</source>
+        <translation type="unfinished">Dieses Gerät kann kein {resolution}-Video abspielen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {fps} fps video</source>
+        <translation type="unfinished">Dieses Gerät kann kein Video mit {fps} fps abspielen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play interlaced video</source>
+        <translation type="unfinished">Dieses Gerät kann kein Interlaced-Video abspielen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play anamorphic video</source>
+        <translation type="unfinished">Dieses Gerät kann kein anamorphes Video abspielen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t display {range}</source>
+        <translation type="unfinished">Dieses Gerät kann {range} nicht anzeigen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {format} audio</source>
+        <translation type="unfinished">Dieses Gerät kann kein {format}-Audio abspielen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {fullFormat}</source>
+        <translation type="unfinished">Dieses Gerät kann {fullFormat} nicht abspielen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {channels} audio</source>
+        <translation type="unfinished">Dieses Gerät kann kein {channels}-Audio abspielen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {rate} kHz audio</source>
+        <translation type="unfinished">Dieses Gerät kann kein Audio mit {rate} kHz abspielen</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {bits}-bit audio</source>
+        <translation type="unfinished">Dieses Gerät kann kein {bits}-Bit-Audio abspielen</translation>
+    </message>
+    <message>
+        <source>The audio track is in a separate file</source>
+        <translation type="unfinished">Die Audiospur liegt in einer separaten Datei</translation>
+    </message>
+    <message>
+        <source>This device can only play the first audio track</source>
+        <translation type="unfinished">Dieses Gerät kann nur die erste Audiospur abspielen</translation>
+    </message>
+    <message>
+        <source>{format} subtitles are being burned into the video</source>
+        <translation type="unfinished">{format}-Untertitel werden ins Video eingebrannt</translation>
+    </message>
+    <message>
+        <source>Roku native player</source>
+        <translation type="unfinished">Nativer Roku-Player</translation>
+    </message>
+    <message>
+        <source>Keyboard Style</source>
+        <translation>Tastaturstil</translation>
+    </message>
+    <message>
+        <source>Native uses your TV&apos;s own keyboard. Classic is the original Moonfin keyboard. Glass is a frosted panel with larger keys. Docked fills the bottom of the screen and shows what you type above the keys.</source>
+        <translation>Nativ verwendet die eigene Tastatur deines Fernsehers. Klassisch ist die bisherige Moonfin-Tastatur. Glass ist eine milchglasartige Fläche mit größeren Tasten. Angedockt füllt den unteren Bildschirmrand und zeigt deine Eingabe über den Tasten an.</translation>
+    </message>
+    <message>
+        <source>Native</source>
+        <translation>Nativ</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <translation type="unfinished">Eingabe</translation>
+    </message>
+    <message>
+        <source>for accents</source>
+        <translation type="unfinished">für Akzente</translation>
+    </message>
+    <message>
+        <source>Sort</source>
+        <translation type="unfinished">Sortierung</translation>
+    </message>
+    <message>
+        <source>Critic Rating</source>
+        <translation type="unfinished">Kritikerbewertung</translation>
+    </message>
+    <message>
+        <source>{0} active</source>
+        <translation type="unfinished">{0} aktiv</translation>
+    </message>
+    <message>
+        <source>This playlist is empty</source>
+        <translation type="unfinished">Diese Playlist ist leer</translation>
+    </message>
+    <message>
+        <source>No tracks match the active filters</source>
+        <translation type="unfinished">Keine Titel passen zu den aktiven Filtern</translation>
+    </message>
+    <message>
+        <source>Live TV Direct Play</source>
+        <translation type="unfinished">Direct Play für Live-TV</translation>
+    </message>
+    <message>
+        <source>You can use it again today at {0}.</source>
+        <translation type="unfinished">Du kannst es heute um {0} wieder nutzen.</translation>
+    </message>
+    <message>
+        <source>You can use it again tomorrow at {0}.</source>
+        <translation type="unfinished">Du kannst es morgen um {0} wieder nutzen.</translation>
+    </message>
+    <message>
+        <source>You can use it again on {0} at {1}.</source>
+        <translation type="unfinished">Du kannst es am {0} um {1} wieder nutzen.</translation>
+    </message>
+    <message>
+        <source>You can use it again on {0}, {1} {2} at {3}.</source>
+        <translation type="unfinished">Du kannst es am {0}, {1} {2} um {3} wieder nutzen.</translation>
+    </message>
+    <message>
+        <source>Playlist order</source>
+        <translation type="unfinished">Reihenfolge der Playlist</translation>
+    </message>
+    <message>
+        <source>On collection pages</source>
+        <translation type="unfinished">Auf Sammlungsseiten</translation>
+    </message>
+    <message>
+        <source>Jump to letter</source>
+        <translation type="unfinished">Zu Buchstabe springen</translation>
+    </message>
+    <message>
+        <source>Music Video</source>
+        <translation type="unfinished">Musikvideo</translation>
+    </message>
+    <message>
+        <source>Alphabet bar</source>
+        <translation type="unfinished">Buchstabenleiste</translation>
+    </message>
+    <message>
+        <source>Folder View</source>
+        <translation type="unfinished">Ordneransicht</translation>
+    </message>
+    <message>
+        <source>Titles Under Posters</source>
+        <translation type="unfinished">Titel unter Postern</translation>
+    </message>
+    <message>
+        <source>Show each item&apos;s title and details below its artwork in library grids.</source>
+        <translation type="unfinished">Titel und Details jedes Elements in Bibliotheksrastern unter dem Artwork anzeigen.</translation>
+    </message>
+    <message>
+        <source>Hide Watch Progress</source>
+        <translation type="unfinished">Wiedergabefortschritt ausblenden</translation>
+    </message>
+    <message>
+        <source>Hide the progress bar on posters you&apos;ve started watching.</source>
+        <translation type="unfinished">Den Fortschrittsbalken auf Postern ausblenden, die du angefangen hast.</translation>
+    </message>
+    <message>
+        <source>Hide the badge showing how many episodes are left to watch.</source>
+        <translation type="unfinished">Das Abzeichen mit der Anzahl der noch nicht gesehenen Episoden ausblenden.</translation>
+    </message>
+    <message>
+        <source>Length</source>
+        <translation type="unfinished">Länge</translation>
+    </message>
+    <message>
+        <source>Track Number</source>
+        <translation type="unfinished">Titelnummer</translation>
+    </message>
+    <message>
+        <source>Folders First</source>
+        <translation type="unfinished">Ordner zuerst</translation>
+    </message>
+    <message>
+        <source>Order Added</source>
+        <translation type="unfinished">Reihenfolge des Hinzufügens</translation>
+    </message>
+    <message>
+        <source>{count} artists</source>
+        <translation type="unfinished">{count} Künstler</translation>
+    </message>
+    <message>
+        <source>Filter by Genre</source>
+        <translation type="unfinished">Nach Genre filtern</translation>
+    </message>
+    <message>
+        <source>Open Album</source>
+        <translation type="unfinished">Album öffnen</translation>
+    </message>
+    <message>
+        <source>{count} songs</source>
+        <translation type="unfinished">{count} Titel</translation>
+    </message>
+    <message>
+        <source>Everything</source>
+        <translation type="unfinished">Alles</translation>
+    </message>
+    <message>
+        <source>Mix</source>
+        <translation type="unfinished">Mix</translation>
+    </message>
+    <message>
+        <source>Most Played</source>
+        <translation type="unfinished">Meistgespielt</translation>
+    </message>
+    <message>
+        <source>Fresh Arrivals</source>
+        <translation type="unfinished">Neuzugänge</translation>
+    </message>
+    <message>
+        <source>The newest 100 songs</source>
+        <translation type="unfinished">Die neuesten 100 Titel</translation>
+    </message>
+    <message>
+        <source>Rediscover</source>
+        <translation type="unfinished">Wiederentdecken</translation>
+    </message>
+    <message>
+        <source>Favorites you haven&apos;t played lately</source>
+        <translation type="unfinished">Favoriten, die du länger nicht abgespielt hast</translation>
+    </message>
+    <message>
+        <source>{count} plays</source>
+        <translation type="unfinished">{count}-mal abgespielt</translation>
+    </message>
+    <message>
+        <source>{count} playlists</source>
+        <translation type="unfinished">{count} Playlists</translation>
+    </message>
+    <message>
+        <source>Open Playlist</source>
+        <translation type="unfinished">Playlist öffnen</translation>
+    </message>
+    <message>
+        <source>Most Albums</source>
+        <translation type="unfinished">Meiste Alben</translation>
+    </message>
+    <message>
+        <source>{0} hr</source>
+        <translation type="unfinished">{0} Std.</translation>
+    </message>
+    <message>
+        <source>{0} hr {1} min</source>
+        <translation type="unfinished">{0} Std. {1} Min.</translation>
+    </message>
+    <message>
+        <source>Show Libraries Individually</source>
+        <translation type="unfinished">Bibliotheken einzeln anzeigen</translation>
+    </message>
+    <message>
+        <source>Show each library as its own button in the navigation bar instead of in the Libraries menu</source>
+        <translation type="unfinished">Jede Bibliothek als eigene Taste in der Navigationsleiste statt im Bibliotheksmenü anzeigen</translation>
+    </message>
+    <message>
+        <source>Keep as Complete</source>
+        <translation type="unfinished">Als vollständig behalten</translation>
+    </message>
+    <message>
+        <source>Marked as complete</source>
+        <translation type="unfinished">Als abgeschlossen markiert</translation>
+    </message>
+    <message>
+        <source>Unable to mark as complete</source>
+        <translation type="unfinished">Konnte nicht als abgeschlossen markiert werden</translation>
+    </message>
+    <message>
+        <source>Incomplete</source>
+        <translation type="unfinished">Unvollständig</translation>
+    </message>
+    <message>
+        <source>{0} of {1} min</source>
+        <translation type="unfinished">{0} von {1} Min.</translation>
+    </message>
+    <message>
+        <source>Complete showing scheduled {0}</source>
+        <translation type="unfinished">Vollständige Ausstrahlung geplant am {0}</translation>
+    </message>
+    <message>
+        <source>Complete copy recorded {0}</source>
+        <translation type="unfinished">Vollständige Kopie aufgenommen am {0}</translation>
+    </message>
+    <message>
+        <source>No complete showing found</source>
+        <translation type="unfinished">Keine vollständige Ausstrahlung gefunden</translation>
+    </message>
+    <message>
+        <source>The series recording will skip this showing</source>
+        <translation type="unfinished">Die Serienaufnahme überspringt diese Ausstrahlung</translation>
+    </message>
+    <message>
+        <source>Series Settings</source>
+        <translation type="unfinished">Serieneinstellungen</translation>
+    </message>
+    <message>
+        <source>Which episodes should be recorded?</source>
+        <translation type="unfinished">Welche Episoden sollen aufgenommen werden?</translation>
+    </message>
+    <message>
+        <source>Every showing, including repeats</source>
+        <translation type="unfinished">Jede Ausstrahlung, auch Wiederholungen</translation>
+    </message>
+    <message>
+        <source>Episodes Not Already Recorded</source>
+        <translation type="unfinished">Noch nicht aufgenommene Episoden</translation>
+    </message>
+    <message>
+        <source>Skips episodes already in your library and records each episode once</source>
+        <translation type="unfinished">Überspringt Episoden, die bereits in deiner Bibliothek sind, und nimmt jede Episode nur einmal auf</translation>
+    </message>
+    <message>
+        <source>New Episodes Only</source>
+        <translation type="unfinished">Nur neue Episoden</translation>
+    </message>
+    <message>
+        <source>First airings only, no repeats</source>
+        <translation type="unfinished">Nur Erstausstrahlungen, keine Wiederholungen</translation>
+    </message>
+    <message>
+        <source>Series recording updated</source>
+        <translation type="unfinished">Serienaufnahme aktualisiert</translation>
+    </message>
+    <message>
+        <source>Unable to update series recording</source>
+        <translation type="unfinished">Serienaufnahme konnte nicht aktualisiert werden</translation>
+    </message>
+    <message>
+        <source>Record This Program</source>
+        <translation type="unfinished">Diese Sendung aufnehmen</translation>
+    </message>
+    <message>
+        <source>Cancel This Recording</source>
+        <translation type="unfinished">Diese Aufnahme abbrechen</translation>
+    </message>
+    <message>
+        <source>Next series recording: {dateTime}</source>
+        <translation type="unfinished">Nächste Serienaufnahme: {dateTime}</translation>
+    </message>
+    <message>
+        <source>Series recording is scheduled, but the guide has no upcoming episodes</source>
+        <translation type="unfinished">Die Serienaufnahme ist geplant, aber die Programminfo enthält keine kommenden Episoden</translation>
+    </message>
+    <message>
+        <source>Record {name}</source>
+        <translation type="unfinished">{name} aufnehmen</translation>
+    </message>
+    <message>
+        <source>This showing started 1 minute ago, so the recording will miss the start.</source>
+        <translation type="unfinished">Diese Ausstrahlung hat vor 1 Minute begonnen, daher fehlt der Aufnahme der Anfang.</translation>
+    </message>
+    <message>
+        <source>This showing started {minutes} minutes ago, so the recording will miss the start.</source>
+        <translation type="unfinished">Diese Ausstrahlung hat vor {minutes} Minuten begonnen, daher fehlt der Aufnahme der Anfang.</translation>
+    </message>
+    <message>
+        <source>{minutes} min already aired</source>
+        <translation type="unfinished">{minutes} Min. bereits gelaufen</translation>
+    </message>
+    <message>
+        <source>Future showing</source>
+        <translation type="unfinished">Spätere Ausstrahlung</translation>
+    </message>
+    <message>
+        <source>Matched by title and description only. Check it&apos;s the same program.</source>
+        <translation type="unfinished">Nur anhand von Titel und Beschreibung zugeordnet. Prüfe, ob es dieselbe Sendung ist.</translation>
+    </message>
+    <message>
+        <source>The descriptions differ, so this may be a different program.</source>
+        <translation type="unfinished">Die Beschreibungen unterscheiden sich, daher ist es möglicherweise eine andere Sendung.</translation>
+    </message>
+    <message>
+        <source>Same episode (S{season}E{episode})</source>
+        <translation type="unfinished">Gleiche Episode (S{season}E{episode})</translation>
+    </message>
+    <message>
+        <source>Record Now Only</source>
+        <translation type="unfinished">Nur jetzt aufnehmen</translation>
+    </message>
+    <message>
+        <source>Record {when} Only</source>
+        <translation type="unfinished">Nur {when} aufnehmen</translation>
+    </message>
+    <message>
+        <source>Record Future Showing Only</source>
+        <translation type="unfinished">Nur spätere Ausstrahlung aufnehmen</translation>
+    </message>
+    <message>
+        <source>Record Now and {when}</source>
+        <translation type="unfinished">Jetzt und {when} aufnehmen</translation>
+    </message>
+    <message>
+        <source>Record Now and Future Showing</source>
+        <translation type="unfinished">Jetzt und spätere Ausstrahlung aufnehmen</translation>
+    </message>
+    <message>
+        <source>Recording started. A future showing will be recorded too.</source>
+        <translation type="unfinished">Aufnahme gestartet. Eine spätere Ausstrahlung wird ebenfalls aufgenommen.</translation>
+    </message>
+    <message>
+        <source>Recording started, but couldn&apos;t request a future showing.</source>
+        <translation type="unfinished">Aufnahme gestartet, aber die spätere Ausstrahlung konnte nicht angefordert werden.</translation>
+    </message>
+    <message>
+        <source>The future showing will be recorded.</source>
+        <translation type="unfinished">Die spätere Ausstrahlung wird aufgenommen.</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t request the future showing, so nothing will be recorded.</source>
+        <translation>Die spätere Ausstrahlung konnte nicht geplant werden. Es wird nichts aufgenommen.</translation>
+    </message>
+    <message>
+        <source>Sorting</source>
+        <translation type="unfinished">Sortierung</translation>
+    </message>
+    <message>
+        <source>IMDb Row Sorting</source>
+        <translation type="unfinished">Sortierung der IMDb-Zeilen</translation>
+    </message>
+    <message>
+        <source>Sort IMDb rows by name, release date, rating, and more.</source>
+        <translation type="unfinished">IMDb-Zeilen nach Name, Erscheinungsdatum, Bewertung und mehr sortieren.</translation>
+    </message>
+    <message>
+        <source>Sort IMDb rows in ascending or descending order.</source>
+        <translation type="unfinished">IMDb-Zeilen aufsteigend oder absteigend sortieren.</translation>
+    </message>
+    <message>
+        <source>TMDB Row Sorting</source>
+        <translation type="unfinished">Sortierung der TMDB-Zeilen</translation>
+    </message>
+    <message>
+        <source>Sort TMDB rows by name, release date, rating, and more.</source>
+        <translation type="unfinished">TMDB-Zeilen nach Name, Erscheinungsdatum, Bewertung und mehr sortieren.</translation>
+    </message>
+    <message>
+        <source>Sort TMDB rows in ascending or descending order.</source>
+        <translation type="unfinished">TMDB-Zeilen aufsteigend oder absteigend sortieren.</translation>
+    </message>
+    <message>
+        <source>Seerr Row Sorting</source>
+        <translation type="unfinished">Sortierung der Seerr-Zeilen</translation>
+    </message>
+    <message>
+        <source>Sort Seerr rows by name, release date, rating, and more.</source>
+        <translation type="unfinished">Seerr-Zeilen nach Name, Erscheinungsdatum, Bewertung und mehr sortieren.</translation>
+    </message>
+    <message>
+        <source>Sort Seerr rows in ascending or descending order.</source>
+        <translation type="unfinished">Seerr-Zeilen aufsteigend oder absteigend sortieren.</translation>
+    </message>
+    <message>
+        <source>Default (List Order)</source>
+        <translation type="unfinished">Standard (Listenreihenfolge)</translation>
+    </message>
+    <message>
+        <source>Popularity</source>
+        <translation type="unfinished">Beliebtheit</translation>
+    </message>
+    <message>
+        <source>IMDb Lists</source>
+        <translation type="unfinished">IMDb-Listen</translation>
+    </message>
+    <message>
+        <source>TMDB Lists</source>
+        <translation type="unfinished">TMDB-Listen</translation>
+    </message>
+    <message>
+        <source>Seerr Discover Sliders</source>
+        <translation type="unfinished">Seerr-Entdecken-Slider</translation>
+    </message>
+    <message>
+        <source>All Items</source>
+        <translation type="unfinished">Alle Titel</translation>
+    </message>
+    <message>
+        <source>Available Only</source>
+        <translation type="unfinished">Nur verfügbare</translation>
+    </message>
+    <message>
+        <source>Request ^0 movies</source>
+        <translation type="unfinished">^0 Filme anfragen</translation>
+    </message>
+    <message>
+        <source>Requesting ^0 of ^1...</source>
+        <translation type="unfinished">Frage ^0 von ^1 an...</translation>
+    </message>
+    <message>
+        <source>requested</source>
+        <translation type="unfinished">angefragt</translation>
+    </message>
+    <message>
+        <source>failed</source>
+        <translation type="unfinished">fehlgeschlagen</translation>
+    </message>
+    <message>
+        <source>S^0</source>
+        <translation type="unfinished">S^0</translation>
+    </message>
+    <message>
+        <source>Episode ^0</source>
+        <translation type="unfinished">Episode ^0</translation>
+    </message>
+    <message>
+        <source>Cancel request for &quot;^0&quot;?</source>
+        <translation type="unfinished">Anfrage für „^0“ abbrechen?</translation>
+    </message>
+    <message>
+        <source>Cancel ^0 requests for &quot;^1&quot;?</source>
+        <translation type="unfinished">^0 Anfragen für „^1“ abbrechen?</translation>
+    </message>
+    <message>
+        <source>Failed to update request</source>
+        <translation type="unfinished">Anfrage konnte nicht aktualisiert werden</translation>
+    </message>
+    <message>
+        <source>Requested by</source>
+        <translation type="unfinished">Angefragt von</translation>
+    </message>
+    <message>
+        <source>Requested by ^0</source>
+        <translation type="unfinished">Angefragt von ^0</translation>
+    </message>
+    <message>
+        <source>Secondary Subtitles</source>
+        <translation type="unfinished">Zweituntertitel</translation>
+    </message>
+    <message>
+        <source>Show a second subtitle track at the same time. The subtitle menu then asks for the primary or secondary track first</source>
+        <translation type="unfinished">Gleichzeitig eine zweite Untertitelspur anzeigen. Das Untertitelmenü fragt dann zuerst nach der primären oder der zweiten Spur</translation>
+    </message>
+    <message>
+        <source>Preferred Secondary Subtitle Language</source>
+        <translation type="unfinished">Bevorzugte Sprache für Zweituntertitel</translation>
+    </message>
+    <message>
+        <source>Secondary</source>
+        <translation type="unfinished">Zweitspur</translation>
+    </message>
+    <message>
+        <source>Secondary Subtitle Track</source>
+        <translation type="unfinished">Zweite Untertitelspur</translation>
+    </message>
+    <message>
+        <source>{0} isn&apos;t shared with this account.</source>
+        <translation type="unfinished">{0} ist für dieses Konto nicht freigegeben.</translation>
+    </message>
+    <message>
+        <source>Connection timed out. Check the address and your network.</source>
+        <translation>Zeitüberschreitung der Verbindung. Überprüfe die Adresse und dein Netzwerk.</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t reach server. Check the address and that the server is running.</source>
+        <translation type="unfinished">Server nicht erreichbar. Überprüfe die Adresse und ob der Server läuft.</translation>
+    </message>
+    <message>
+        <source>Failed to connect. Check the address and try again.</source>
+        <translation type="unfinished">Verbindung fehlgeschlagen. Überprüfe die Adresse und versuche es erneut.</translation>
+    </message>
+    <message>
+        <source>Go to plex.tv/link on any device and enter this code</source>
+        <translation>Öffne plex.tv/link auf einem beliebigen Gerät und gib diesen Code ein</translation>
+    </message>
+    <message>
+        <source>Invalid username or password.</source>
+        <translation type="unfinished">Ungültiger Benutzername oder ungültiges Passwort.</translation>
+    </message>
+    <message>
+        <source>No Plex servers found on this account</source>
+        <translation>Keine Plex-Server in diesem Konto gefunden</translation>
+    </message>
+    <message>
+        <source>Or scan this with a phone that&apos;s signed in to Plex</source>
+        <translation type="unfinished">Oder scanne dies mit einem Handy, das bei Plex angemeldet ist</translation>
+    </message>
+    <message>
+        <source>PIN</source>
+        <translation type="unfinished">PIN</translation>
+    </message>
+    <message>
+        <source>Plex servers don&apos;t take client logs.</source>
+        <translation type="unfinished">Plex-Server nehmen keine Client-Protokolle an.</translation>
+    </message>
+    <message>
+        <source>Server error. Please try again later.</source>
+        <translation type="unfinished">Serverfehler. Bitte versuche es später erneut.</translation>
+    </message>
+    <message>
+        <source>Sign in with a password</source>
+        <translation>Mit Passwort anmelden</translation>
+    </message>
+    <message>
+        <source>Sign in with Plex</source>
+        <translation>Mit Plex anmelden</translation>
+    </message>
+    <message>
+        <source>Unable to connect to {0}</source>
+        <translation type="unfinished">Verbindung zu {0} nicht möglich</translation>
+    </message>
+    <message>
+        <source>Verification code</source>
+        <translation>Bestätigungscode</translation>
+    </message>
+    <message>
+        <source>Waiting for you to approve the code...</source>
+        <translation>Warte auf deine Bestätigung des Codes...</translation>
+    </message>
+    <message>
+        <source>Works with Jellyfin, Emby and Silo. A Plex address opens the Plex sign-in.</source>
+        <translation type="unfinished">Funktioniert mit Jellyfin, Emby und Silo. Eine Plex-Adresse öffnet die Plex-Anmeldung.</translation>
+    </message>
+    <message>
+        <source>Live preview</source>
+        <translation type="unfinished">Live-Vorschau</translation>
+    </message>
+    <message>
+        <source>Shows on the {0} preview</source>
+        <translation type="unfinished">Wirkt sich auf die Vorschau „{0}“ aus</translation>
+    </message>
+    <message>
+        <source>Not shown in the preview</source>
+        <translation type="unfinished">In der Vorschau nicht sichtbar</translation>
+    </message>
+    <message>
+        <source>New Seasons &amp; Episodes</source>
+        <translation type="unfinished">Neue Staffeln &amp; Episoden</translation>
+    </message>
+    <message>
+        <source>Choose which titles the Media Bar picks from its source libraries and collections: random ones, the newest, or series with new episodes.</source>
+        <translation type="unfinished">Wähle, welche Titel die Medienleiste aus ihren Quellbibliotheken und Sammlungen auswählt: zufällige, die neuesten oder Serien mit neuen Episoden.</translation>
+    </message>
+    <message>
+        <source>New Release Banner</source>
+        <translation type="unfinished">Neuerscheinungs-Banner</translation>
+    </message>
+    <message>
+        <source>Flag series with a new season or new episodes that aired recently.</source>
+        <translation type="unfinished">Serien mit einer neuen Staffel oder kürzlich ausgestrahlten neuen Episoden markieren.</translation>
+    </message>
+    <message>
+        <source>New Release Window</source>
+        <translation type="unfinished">Zeitraum für Neuerscheinungen</translation>
+    </message>
+    <message>
+        <source>How long after an episode airs it still counts as new.</source>
+        <translation type="unfinished">Wie lange eine Episode nach der Ausstrahlung noch als neu gilt.</translation>
+    </message>
+    <message>
+        <source>7 days</source>
+        <translation type="unfinished">7 Tage</translation>
+    </message>
+    <message>
+        <source>14 days</source>
+        <translation type="unfinished">14 Tage</translation>
+    </message>
+    <message>
+        <source>60 days</source>
+        <translation type="unfinished">60 Tage</translation>
+    </message>
+    <message>
+        <source>Watching on MDBList</source>
+        <translation type="unfinished">Wird auf MDBList geschaut</translation>
+    </message>
+    <message>
+        <source>{users} watching now · {movies} movies · {shows} shows</source>
+        <translation type="unfinished">{users} schauen gerade · {movies} Filme · {shows} Serien</translation>
+    </message>
+    <message>
+        <source>{users} watched today · {movies} movies · {shows} shows</source>
+        <translation type="unfinished">{users} haben heute geschaut · {movies} Filme · {shows} Serien</translation>
+    </message>
+    <message>
+        <source>{count} watching</source>
+        <translation type="unfinished">{count} schauen</translation>
+    </message>
+    <message>
+        <source>Image Type per Row</source>
+        <translation type="unfinished">Bildtyp pro Zeile</translation>
+    </message>
+    <message>
+        <source>Calendar</source>
+        <translation>Kalender</translation>
+    </message>
+    <message>
+        <source>Full calendar</source>
+        <translation type="unfinished">Ganzer Kalender</translation>
+    </message>
+    <message>
+        <source>Upcoming</source>
+        <translation type="unfinished">Demnächst</translation>
+    </message>
+    <message>
+        <source>Recently aired</source>
+        <translation type="unfinished">Kürzlich ausgestrahlt</translation>
+    </message>
+    <message>
+        <source>Ready to watch</source>
+        <translation type="unfinished">Bereit zum Ansehen</translation>
+    </message>
+    <message>
+        <source>Coming up this week</source>
+        <translation>Kommt diese Woche</translation>
+    </message>
+    <message>
+        <source>Nothing coming up</source>
+        <translation type="unfinished">Nichts in Sicht</translation>
+    </message>
+    <message>
+        <source>Nothing aired recently</source>
+        <translation type="unfinished">In letzter Zeit nichts ausgestrahlt</translation>
+    </message>
+    <message>
+        <source>Nothing on this day</source>
+        <translation type="unfinished">An diesem Tag nichts</translation>
+    </message>
+    <message>
+        <source>Starts in</source>
+        <translation type="unfinished">Beginnt in</translation>
+    </message>
+    <message>
+        <source>days</source>
+        <translation type="unfinished">Tage</translation>
+    </message>
+    <message>
+        <source>hr</source>
+        <translation type="unfinished">Std.</translation>
+    </message>
+    <message>
+        <source>{day} at {time}</source>
+        <translation type="unfinished">{day} um {time}</translation>
+    </message>
+    <message>
+        <source>Series premiere</source>
+        <translation type="unfinished">Serienpremiere</translation>
+    </message>
+    <message>
+        <source>New season</source>
+        <translation type="unfinished">Neue Staffel</translation>
+    </message>
+    <message>
+        <source>Finale</source>
+        <translation type="unfinished">Finale</translation>
+    </message>
+    <message>
+        <source>Midseason finale</source>
+        <translation type="unfinished">Midseason-Finale</translation>
+    </message>
+    <message>
+        <source>Series finale</source>
+        <translation type="unfinished">Serienfinale</translation>
+    </message>
+    <message>
+        <source>NEW</source>
+        <translation type="unfinished">NEU</translation>
+    </message>
+    <message>
+        <source>In library</source>
+        <translation type="unfinished">In der Bibliothek</translation>
+    </message>
+    <message>
+        <source>Not monitored</source>
+        <translation type="unfinished">Nicht überwacht</translation>
+    </message>
+    <message>
+        <source>Movie details</source>
+        <translation type="unfinished">Filmdetails</translation>
+    </message>
+    <message>
+        <source>In {days} days ({date})</source>
+        <translation type="unfinished">In {days} Tagen ({date})</translation>
+    </message>
+    <message>
+        <source>Cinema</source>
+        <translation>Kino</translation>
+    </message>
+    <message>
+        <source>Physical</source>
+        <translation type="unfinished">Physisch</translation>
+    </message>
+    <message>
+        <source>The calendar is limited to admins on this server.</source>
+        <translation type="unfinished">Der Kalender ist auf diesem Server nur für Admins verfügbar.</translation>
+    </message>
+    <message>
+        <source>An admin needs to sign in to Seerr in Moonfin before the calendar can load.</source>
+        <translation type="unfinished">Ein Administrator muss sich in Moonfin bei Seerr anmelden, bevor der Kalender geladen werden kann.</translation>
+    </message>
+    <message>
+        <source>No Sonarr or Radarr server is linked yet.</source>
+        <translation type="unfinished">Es ist noch kein Sonarr- oder Radarr-Server verknüpft.</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t load the calendar.</source>
+        <translation>Der Kalender konnte nicht geladen werden.</translation>
+    </message>
+    <message>
+        <source>Show Calendar Button</source>
+        <translation type="unfinished">Kalender-Taste anzeigen</translation>
+    </message>
+    <message>
+        <source>Show the calendar of upcoming episodes and movies in the navigation bar</source>
+        <translation type="unfinished">Den Kalender mit kommenden Episoden und Filmen in der Navigationsleiste anzeigen</translation>
+    </message>
+    <message>
+        <source>See All card</source>
+        <translation type="unfinished">„Alle anzeigen“-Karte</translation>
+    </message>
+    <message>
+        <source>End the upcoming rows with a card that opens the calendar</source>
+        <translation type="unfinished">Die Zeilen für Kommendes mit einer Karte abschließen, die den Kalender öffnet</translation>
+    </message>
+    <message>
+        <source>Radarr Calendar</source>
+        <translation type="unfinished">Radarr-Kalender</translation>
+    </message>
+    <message>
+        <source>Sonarr Calendar</source>
+        <translation type="unfinished">Sonarr-Kalender</translation>
+    </message>
+    <message>
+        <source>Radarr and Sonarr Calendars</source>
+        <translation type="unfinished">Radarr- und Sonarr-Kalender</translation>
+    </message>
+    <message>
+        <source>Hide Movies Already on the Server</source>
+        <translation type="unfinished">Filme ausblenden, die bereits auf dem Server sind</translation>
+    </message>
+    <message>
+        <source>Leave out movies Radarr has already downloaded</source>
+        <translation type="unfinished">Filme auslassen, die Radarr bereits heruntergeladen hat</translation>
+    </message>
+    <message>
+        <source>Hide Episodes Already on the Server</source>
+        <translation type="unfinished">Episoden ausblenden, die bereits auf dem Server sind</translation>
+    </message>
+    <message>
+        <source>Leave out episodes Sonarr has already downloaded</source>
+        <translation type="unfinished">Episoden auslassen, die Sonarr bereits heruntergeladen hat</translation>
+    </message>
+    <message>
+        <source>Next air date at the end</source>
+        <translation type="unfinished">Nächster Sendetermin am Ende</translation>
+    </message>
+    <message>
+        <source>When the next episode isn&apos;t in your library yet, the end of episode card says when it airs</source>
+        <translation type="unfinished">Wenn die nächste Episode noch nicht in deiner Bibliothek ist, zeigt die Karte am Episodenende, wann sie ausgestrahlt wird</translation>
+    </message>
+    <message>
+        <source>Style, filters and actions for the calendar</source>
+        <translation type="unfinished">Stil, Filter und Aktionen für den Kalender</translation>
+    </message>
+    <message>
+        <source>What shows</source>
+        <translation type="unfinished">Was angezeigt wird</translation>
+    </message>
+    <message>
+        <source>Looks</source>
+        <translation type="unfinished">Aussehen</translation>
+    </message>
+    <message>
+        <source>Calendar style</source>
+        <translation>Kalenderstil</translation>
+    </message>
+    <message>
+        <source>What the Calendar button opens. The full month is one button away in both.</source>
+        <translation type="unfinished">Was die Kalender-Taste öffnet. Der ganze Monat ist in beiden Fällen nur einen Tastendruck entfernt.</translation>
+    </message>
+    <message>
+        <source>Countdown</source>
+        <translation>Countdown</translation>
+    </message>
+    <message>
+        <source>Week starts on</source>
+        <translation type="unfinished">Woche beginnt am</translation>
+    </message>
+    <message>
+        <source>My shows keeps the series you favorited or started watching</source>
+        <translation type="unfinished">„Meine Serien“ enthält die Serien, die du favorisiert oder begonnen hast</translation>
+    </message>
+    <message>
+        <source>My shows</source>
+        <translation type="unfinished">Meine Serien</translation>
+    </message>
+    <message>
+        <source>Include unmonitored</source>
+        <translation type="unfinished">Nicht überwachte einbeziehen</translation>
+    </message>
+    <message>
+        <source>Season 0 episodes, like extras and holiday specials</source>
+        <translation type="unfinished">Episoden der Staffel 0, z. B. Extras und Feiertags-Specials</translation>
+    </message>
+    <message>
+        <source>Premiere and finale tags</source>
+        <translation type="unfinished">Premieren- und Finale-Markierungen</translation>
+    </message>
+    <message>
+        <source>Mark premieres, finales and new seasons</source>
+        <translation type="unfinished">Premieren, Finale und neue Staffeln markieren</translation>
+    </message>
+    <message>
+        <source>Color by</source>
+        <translation>Einfärben nach</translation>
+    </message>
+    <message>
+        <source>Type tells episodes from movies. Status shows what&apos;s in your library, coming up or missing.</source>
+        <translation type="unfinished">„Typ“ unterscheidet Episoden von Filmen. „Status“ zeigt, was in deiner Bibliothek ist, demnächst kommt oder fehlt.</translation>
+    </message>
+    <message>
+        <source>Card image</source>
+        <translation>Kartenbild</translation>
+    </message>
+    <message>
+        <source>The artwork on the Countdown rows</source>
+        <translation type="unfinished">Das Artwork in den Countdown-Zeilen</translation>
+    </message>
+    <message>
+        <source>Spoiler safe</source>
+        <translation type="unfinished">Spoilerfrei</translation>
+    </message>
+    <message>
+        <source>Hide episode titles and stills for shows you&apos;re behind on</source>
+        <translation type="unfinished">Episodentitel und Vorschaubilder für Serien ausblenden, bei denen du hinterher bist</translation>
+    </message>
+    <message>
+        <source>Selecting an item</source>
+        <translation type="unfinished">Auswählen eines Elements</translation>
+    </message>
+    <message>
+        <source>What OK or a tap does on something that&apos;s already in your library</source>
+        <translation type="unfinished">Was OK oder Tippen bei etwas bewirkt, das bereits in deiner Bibliothek ist</translation>
+    </message>
+    <message>
+        <source>Open details</source>
+        <translation type="unfinished">Details öffnen</translation>
+    </message>
+    <message>
+        <source>Play when in library</source>
+        <translation type="unfinished">Abspielen, wenn in der Bibliothek</translation>
+    </message>
+    <message>
+        <source>Request button</source>
+        <translation type="unfinished">Anfrage-Taste</translation>
+    </message>
+    <message>
+        <source>Show the Seerr request button on missing movies and seasons</source>
+        <translation type="unfinished">Die Seerr-Anfrage-Taste bei fehlenden Filmen und Staffeln anzeigen</translation>
+    </message>
+    <message>
+        <source>Seerr, Calendar, Achievement Badges, and friends.</source>
+        <translation type="unfinished">Seerr, Kalender, Achievement Badges und Freunde.</translation>
+    </message>
+    <message>
+        <source>Moonbase is free and runs on your server. With it, Moonfin gets:</source>
+        <translation type="unfinished">Moonbase ist kostenlos und läuft auf deinem Server. Damit bekommt Moonfin:</translation>
+    </message>
+    <message>
+        <source>Only a server admin can install it. Send them this link.</source>
+        <translation type="unfinished">Nur ein Server-Admin kann es installieren. Schick ihm diesen Link.</translation>
+    </message>
+    <message>
+        <source>It takes a few steps on your server to install. They&apos;re all at this link.</source>
+        <translation type="unfinished">Die Installation auf deinem Server erfordert ein paar Schritte. Du findest sie alle unter diesem Link.</translation>
+    </message>
+    <message>
+        <source>Installing Moonbase...</source>
+        <translation type="unfinished">Moonbase wird installiert...</translation>
+    </message>
+    <message>
+        <source>Moonbase is installed. It turns on when the server restarts, which stops anything playing right now.</source>
+        <translation type="unfinished">Moonbase ist installiert. Es wird aktiv, sobald der Server neu startet. Dabei wird alles beendet, was gerade abgespielt wird.</translation>
+    </message>
+    <message>
+        <source>The server is restarting. Moonbase turns on once it&apos;s back.</source>
+        <translation type="unfinished">Der Server wird neu gestartet. Moonbase wird aktiv, sobald er wieder läuft.</translation>
+    </message>
+    <message>
+        <source>Moonbase couldn&apos;t be installed. {0}</source>
+        <translation type="unfinished">Moonbase konnte nicht installiert werden. {0}</translation>
+    </message>
+    <message>
+        <source>Settings synced across your devices</source>
+        <translation type="unfinished">Einstellungen werden zwischen deinen Geräten synchronisiert</translation>
+    </message>
+    <message>
+        <source>Extra ratings and TMDB reviews</source>
+        <translation type="unfinished">Zusätzliche Bewertungen und TMDB-Rezensionen</translation>
+    </message>
+    <message>
+        <source>Custom rows from your favorite lists</source>
+        <translation type="unfinished">Eigene Zeilen aus deinen Lieblingslisten</translation>
+    </message>
+    <message>
+        <source>Retro games with synced saves</source>
+        <translation type="unfinished">Retro-Spiele mit synchronisierten Spielständen</translation>
+    </message>
+    <message>
+        <source>Your own order for each collection</source>
+        <translation type="unfinished">Deine eigene Reihenfolge für jede Sammlung</translation>
+    </message>
+    <message>
+        <source>Messages from your server admin</source>
+        <translation type="unfinished">Nachrichten von deinem Server-Admin</translation>
+    </message>
+    <message>
+        <source>Poster Labels</source>
+        <translation type="unfinished">Poster-Labels</translation>
+    </message>
+    <message>
+        <source>Show the labels on posters, such as 4K or HDR.</source>
+        <translation type="unfinished">Die Labels auf Postern anzeigen, z. B. 4K oder HDR.</translation>
+    </message>
+    <message>
+        <source>Date Format</source>
+        <translation type="unfinished">Datumsformat</translation>
+    </message>
+    <message>
+        <source>Choose between month-day, day-month, or locale default for calendar and release dates</source>
+        <translation type="unfinished">Wähle zwischen Monat/Tag, Tag/Monat oder dem Standard der Region für Kalender- und Erscheinungsdaten</translation>
+    </message>
+    <message>
+        <source>Locale Default</source>
+        <translation type="unfinished">Standard der Region</translation>
+    </message>
+    <message>
+        <source>Month / Day (Nov 10)</source>
+        <translation type="unfinished">Monat / Tag (Nov 10)</translation>
+    </message>
+    <message>
+        <source>Day / Month (10 Nov)</source>
+        <translation type="unfinished">Tag / Monat (10. Nov)</translation>
+    </message>
+    <message>
+        <source>{0} more presses</source>
+        <translation type="unfinished">Noch {0} Tastendrücke</translation>
+    </message>
+    <message>
+        <source>1 more press</source>
+        <translation type="unfinished">Noch 1 Tastendruck</translation>
+    </message>
+    <message>
+        <source>After Hours unlocked</source>
+        <translation type="unfinished">After Hours freigeschaltet</translation>
+    </message>
+    <message>
+        <source>Endless runner with a gravity flip</source>
+        <translation type="unfinished">Endlos-Runner mit Schwerkraftwechsel</translation>
+    </message>
+    <message>
+        <source>Three-lane runner</source>
+        <translation type="unfinished">Runner mit drei Bahnen</translation>
+    </message>
+    <message>
+        <source>Grid crawler</source>
+        <translation type="unfinished">Raster-Crawler</translation>
+    </message>
+    <message>
+        <source>One-button stacker</source>
+        <translation type="unfinished">Ein-Tasten-Stapelspiel</translation>
+    </message>
+    <message>
+        <source>Paddle breaker</source>
+        <translation type="unfinished">Paddle-Breaker</translation>
+    </message>
+    <message>
+        <source>The runner from the loading screen finally gets somewhere to go.</source>
+        <translation type="unfinished">Der Läufer aus dem Ladebildschirm darf endlich irgendwohin laufen.</translation>
+    </message>
+    <message>
+        <source>A sprint down three lobby aisles.</source>
+        <translation type="unfinished">Ein Sprint durch drei Gänge im Kinofoyer.</translation>
+    </message>
+    <message>
+        <source>Steer an HDMI cable around the back of the TV cabinet and plug into signal.</source>
+        <translation type="unfinished">Steuere ein HDMI-Kabel hinter dem TV-Schrank entlang und steck es ins Signal.</translation>
+    </message>
+    <message>
+        <source>Build a shelf-high tower of Blu-ray cases, each one a title from your own library.</source>
+        <translation type="unfinished">Baue einen regalhohen Turm aus Blu-ray-Hüllen, jede ein Titel aus deiner eigenen Bibliothek.</translation>
+    </message>
+    <message>
+        <source>A bad encode left the picture full of blocky artifacts, and they creep down a little every second.</source>
+        <translation type="unfinished">Eine schlechte Kodierung hat das Bild mit Blockartefakten übersät, und sie rücken jede Sekunde ein Stück nach unten.</translation>
+    </message>
+    <message>
+        <source>Leaderboards</source>
+        <translation type="unfinished">Bestenlisten</translation>
+    </message>
+    <message>
+        <source>Every game&apos;s top 3 at once.</source>
+        <translation type="unfinished">Die Top 3 aller Spiele auf einmal.</translation>
+    </message>
+    <message>
+        <source>Top 3 · This server</source>
+        <translation type="unfinished">Top 3 · Dieser Server</translation>
+    </message>
+    <message>
+        <source>Top 3 · This device</source>
+        <translation type="unfinished">Top 3 · Dieses Gerät</translation>
+    </message>
+    <message>
+        <source>No scores yet</source>
+        <translation type="unfinished">Noch keine Punktestände</translation>
+    </message>
+    <message>
+        <source>YOU</source>
+        <translation type="unfinished">DU</translation>
+    </message>
+    <message>
+        <source>Quit</source>
+        <translation type="unfinished">Beenden</translation>
+    </message>
+    <message>
+        <source>Sound on</source>
+        <translation type="unfinished">Ton an</translation>
+    </message>
+    <message>
+        <source>Sound off</source>
+        <translation type="unfinished">Ton aus</translation>
+    </message>
+    <message>
+        <source>Game over</source>
+        <translation type="unfinished">Game Over</translation>
+    </message>
+    <message>
+        <source>Play again</source>
+        <translation type="unfinished">Nochmal spielen</translation>
+    </message>
+    <message>
+        <source>Back to the arcade</source>
+        <translation type="unfinished">Zurück zur Spielhalle</translation>
+    </message>
+    <message>
+        <source>{0} · Top 3</source>
+        <translation type="unfinished">{0} · Top 3</translation>
+    </message>
+    <message>
+        <source>New #{0} on the board</source>
+        <translation type="unfinished">Neuer Platz {0} in der Bestenliste</translation>
+    </message>
+    <message>
+        <source>Scores from {0}</source>
+        <translation type="unfinished">Punktestände von {0}</translation>
+    </message>
+    <message>
+        <source>Scores on this device</source>
+        <translation type="unfinished">Punktestände auf diesem Gerät</translation>
+    </message>
+    <message>
+        <source>PERFECT</source>
+        <translation type="unfinished">PERFEKT</translation>
+    </message>
+    <message>
+        <source>BOX SET</source>
+        <translation type="unfinished">BOX-SET</translation>
+    </message>
+    <message>
+        <source>Director&apos;s Cut</source>
+        <translation type="unfinished">Director&apos;s Cut</translation>
+    </message>
+    <message>
+        <source>Special Edition</source>
+        <translation type="unfinished">Special Edition</translation>
+    </message>
+    <message>
+        <source>Widescreen</source>
+        <translation type="unfinished">Breitbild</translation>
+    </message>
+    <message>
+        <source>Bonus Features</source>
+        <translation type="unfinished">Bonusmaterial</translation>
+    </message>
+    <message>
+        <source>Theatrical Cut</source>
+        <translation type="unfinished">Kinofassung</translation>
+    </message>
+    <message>
+        <source>Remastered</source>
+        <translation type="unfinished">Remastered</translation>
+    </message>
+    <message>
+        <source>Collector&apos;s Edition</source>
+        <translation type="unfinished">Sammleredition</translation>
+    </message>
+    <message>
+        <source>Extended Edition</source>
+        <translation type="unfinished">Extended Edition</translation>
+    </message>
+    <message>
+        <source>How to play</source>
+        <translation type="unfinished">Spielanleitung</translation>
+    </message>
+    <message>
+        <source>Enemies</source>
+        <translation type="unfinished">Gegner</translation>
+    </message>
+    <message>
+        <source>Obstacles</source>
+        <translation type="unfinished">Hindernisse</translation>
+    </message>
+    <message>
+        <source>Powerups</source>
+        <translation type="unfinished">Power-ups</translation>
+    </message>
+    <message>
+        <source>Back to the game</source>
+        <translation type="unfinished">Zurück zum Spiel</translation>
+    </message>
+    <message>
+        <source>Down</source>
+        <translation type="unfinished">Runter</translation>
+    </message>
+    <message>
+        <source>OK jumps, again mid-air to flip sides. Down slides. On the ceiling Up and Down swap.</source>
+        <translation type="unfinished">OK springt, in der Luft erneut gedrückt wechselt die Seite. Runter rutscht. An der Decke sind Hoch und Runter vertauscht.</translation>
+    </message>
+    <message>
+        <source>Up and Down change lanes. OK jumps.</source>
+        <translation type="unfinished">Hoch und runter wechseln die Bahn. OK springt.</translation>
+    </message>
+    <message>
+        <source>Arrows turn. The cable never stops.</source>
+        <translation type="unfinished">Die Pfeile lenken. Das Kabel hält nie an.</translation>
+    </message>
+    <message>
+        <source>OK drops the case.</source>
+        <translation type="unfinished">OK lässt die Hülle fallen.</translation>
+    </message>
+    <message>
+        <source>Left and Right slide the scrubber.</source>
+        <translation type="unfinished">Links und rechts bewegen den Schläger.</translation>
+    </message>
+    <message>
+        <source>Lag Bat</source>
+        <translation type="unfinished">Lag-Fledermaus</translation>
+    </message>
+    <message>
+        <source>Swoops in at head height. Slide under it.</source>
+        <translation type="unfinished">Stürzt auf Kopfhöhe herab. Rutsch darunter durch.</translation>
+    </message>
+    <message>
+        <source>Static Gremlin</source>
+        <translation type="unfinished">Rausch-Gremlin</translation>
+    </message>
+    <message>
+        <source>Hops along the floor or the ceiling toward you. Jump it.</source>
+        <translation type="unfinished">Hüpft am Boden oder an der Decke auf dich zu. Spring darüber.</translation>
+    </message>
+    <message>
+        <source>Cable Coil</source>
+        <translation type="unfinished">Kabelrolle</translation>
+    </message>
+    <message>
+        <source>Low on the floor or the ceiling. Jump it.</source>
+        <translation type="unfinished">Tief am Boden oder an der Decke. Spring darüber.</translation>
+    </message>
+    <message>
+        <source>Buffering Banner</source>
+        <translation type="unfinished">Puffer-Banner</translation>
+    </message>
+    <message>
+        <source>Slide under the sign. Its pole is a wall on the other side.</source>
+        <translation type="unfinished">Rutsch unter dem Schild durch. Sein Pfosten ist auf der anderen Seite eine Wand.</translation>
+    </message>
+    <message>
+        <source>A shield that takes one hit.</source>
+        <translation type="unfinished">Ein Schild, der einen Treffer aushält.</translation>
+    </message>
+    <message>
+        <source>Three seconds of dash that smashes anything.</source>
+        <translation type="unfinished">Drei Sekunden Sprint, der alles zertrümmert.</translation>
+    </message>
+    <message>
+        <source>Popcorn</source>
+        <translation type="unfinished">Popcorn</translation>
+    </message>
+    <message>
+        <source>25 points a piece.</source>
+        <translation type="unfinished">25 Punkte pro Stück.</translation>
+    </message>
+    <message>
+        <source>Loose Reel</source>
+        <translation type="unfinished">Lose Filmrolle</translation>
+    </message>
+    <message>
+        <source>Rolls down your lane faster than you run. Jump it.</source>
+        <translation type="unfinished">Rollt schneller deine Bahn herunter, als du läufst. Spring darüber.</translation>
+    </message>
+    <message>
+        <source>Usher</source>
+        <translation type="unfinished">Platzanweiser</translation>
+    </message>
+    <message>
+        <source>Walks toward you and changes lanes once.</source>
+        <translation type="unfinished">Läuft auf dich zu und wechselt einmal die Bahn.</translation>
+    </message>
+    <message>
+        <source>Velvet Rope</source>
+        <translation type="unfinished">Samtkordel</translation>
+    </message>
+    <message>
+        <source>Low. Jump it or change lanes.</source>
+        <translation type="unfinished">Niedrig. Spring darüber oder wechsle die Bahn.</translation>
+    </message>
+    <message>
+        <source>Popcorn Cart</source>
+        <translation type="unfinished">Popcornwagen</translation>
+    </message>
+    <message>
+        <source>Too tall to jump. Change lanes.</source>
+        <translation type="unfinished">Zu hoch zum Springen. Wechsle die Bahn.</translation>
+    </message>
+    <message>
+        <source>Front Row Pass</source>
+        <translation type="unfinished">Erste-Reihe-Pass</translation>
+    </message>
+    <message>
+        <source>Magnet</source>
+        <translation type="unfinished">Magnet</translation>
+    </message>
+    <message>
+        <source>Pulls in tickets from every lane for eight seconds.</source>
+        <translation type="unfinished">Zieht acht Sekunden lang Tickets aus allen Bahnen an.</translation>
+    </message>
+    <message>
+        <source>Ticket</source>
+        <translation type="unfinished">Ticket</translation>
+    </message>
+    <message>
+        <source>Interference Bug</source>
+        <translation type="unfinished">Störungs-Bug</translation>
+    </message>
+    <message>
+        <source>Wanders at random.</source>
+        <translation type="unfinished">Wandert zufällig umher.</translation>
+    </message>
+    <message>
+        <source>Tangle</source>
+        <translation type="unfinished">Kabelsalat</translation>
+    </message>
+    <message>
+        <source>Slowly chases your plug.</source>
+        <translation type="unfinished">Verfolgt langsam deinen Stecker.</translation>
+    </message>
+    <message>
+        <source>A dead cell. One appears every third signal.</source>
+        <translation type="unfinished">Eine tote Zelle. Bei jedem dritten Signal erscheint eine.</translation>
+    </message>
+    <message>
+        <source>Power Brick</source>
+        <translation type="unfinished">Netzteil</translation>
+    </message>
+    <message>
+        <source>A 2 by 2 block every fifth signal.</source>
+        <translation type="unfinished">Ein 2×2-Block bei jedem fünften Signal.</translation>
+    </message>
+    <message>
+        <source>Ghost</source>
+        <translation type="unfinished">Geist</translation>
+    </message>
+    <message>
+        <source>Five seconds of passing through everything but the edge.</source>
+        <translation type="unfinished">Fünf Sekunden lang durch alles hindurch, außer durch den Rand.</translation>
+    </message>
+    <message>
+        <source>Snip</source>
+        <translation type="unfinished">Schnipp</translation>
+    </message>
+    <message>
+        <source>Cuts the cable in half for bonus points.</source>
+        <translation type="unfinished">Schneidet das Kabel für Bonuspunkte in zwei Hälften.</translation>
+    </message>
+    <message>
+        <source>Signal</source>
+        <translation type="unfinished">Signal</translation>
+    </message>
+    <message>
+        <source>Points, and two more segments.</source>
+        <translation type="unfinished">Punkte und zwei weitere Segmente.</translation>
+    </message>
+    <message>
+        <source>Shelf Cat</source>
+        <translation type="unfinished">Regalkatze</translation>
+    </message>
+    <message>
+        <source>Bats a case as it comes in, so that one slides faster.</source>
+        <translation type="unfinished">Schlägt eine ankommende Hülle an, sodass diese schneller rutscht.</translation>
+    </message>
+    <message>
+        <source>Blu-ray Case</source>
+        <translation type="unfinished">Blu-ray-Hülle</translation>
+    </message>
+    <message>
+        <source>A title from your library. The overhang gets trimmed off.</source>
+        <translation type="unfinished">Ein Titel aus deiner Bibliothek. Der Überstand wird abgeschnitten.</translation>
+    </message>
+    <message>
+        <source>Steelbook</source>
+        <translation type="unfinished">Steelbook</translation>
+    </message>
+    <message>
+        <source>Every tenth case. Slides much faster.</source>
+        <translation type="unfinished">Jede zehnte Hülle. Rutscht viel schneller.</translation>
+    </message>
+    <message>
+        <source>Perfect Drop</source>
+        <translation type="unfinished">Perfekter Drop</translation>
+    </message>
+    <message>
+        <source>Land it dead on and the stack grows a little wider.</source>
+        <translation type="unfinished">Triffst du genau, wird der Stapel ein Stück breiter.</translation>
+    </message>
+    <message>
+        <source>Box Set</source>
+        <translation type="unfinished">Box-Set</translation>
+    </message>
+    <message>
+        <source>Three perfect drops in a row grow it a lot wider.</source>
+        <translation type="unfinished">Drei perfekte Drops hintereinander machen ihn deutlich breiter.</translation>
+    </message>
+    <message>
+        <source>Dead Pixel</source>
+        <translation type="unfinished">Toter Pixel</translation>
+    </message>
+    <message>
+        <source>Falls from cleared blocks. Catching it shrinks the scrubber.</source>
+        <translation type="unfinished">Fällt aus zerstörten Blöcken. Fängst du es, schrumpft der Schläger.</translation>
+    </message>
+    <message>
+        <source>Macroblock</source>
+        <translation type="unfinished">Makroblock</translation>
+    </message>
+    <message>
+        <source>One hit clears it.</source>
+        <translation type="unfinished">Ein Treffer entfernt ihn.</translation>
+    </message>
+    <message>
+        <source>Keyframe</source>
+        <translation type="unfinished">Keyframe</translation>
+    </message>
+    <message>
+        <source>Takes three hits and drops a powerup.</source>
+        <translation type="unfinished">Hält drei Treffer aus und lässt ein Power-up fallen.</translation>
+    </message>
+    <message>
+        <source>A scrubber twice as wide for eight seconds.</source>
+        <translation type="unfinished">Acht Sekunden lang ein doppelt so breiter Schläger.</translation>
+    </message>
+    <message>
+        <source>Buffer</source>
+        <translation type="unfinished">Puffer</translation>
+    </message>
+    <message>
+        <source>A net under the scrubber that saves one miss.</source>
+        <translation type="unfinished">Ein Netz unter dem Schläger, das einen Fehlschlag auffängt.</translation>
+    </message>
+    <message>
+        <source>Episode Director</source>
+        <translation type="unfinished">Episodenregie</translation>
+    </message>
+    <message>
+        <source>{0} (Episode Director)</source>
+        <translation type="unfinished">{0} (Episodenregie)</translation>
+    </message>
+    <message>
+        <source>Episode Writer</source>
+        <translation type="unfinished">Episodendrehbuch</translation>
+    </message>
+    <message>
+        <source>{0} (Episode Writer)</source>
+        <translation type="unfinished">{0} (Episodendrehbuch)</translation>
+    </message>
+    <message>
+        <source>Guest Star</source>
+        <translation>Gaststar</translation>
+    </message>
+    <message>
+        <source>{0} (Guest Star)</source>
+        <translation type="unfinished">{0} (Gaststar)</translation>
+    </message>
+    <message>
+        <source>EPISODE DIRECTOR</source>
+        <translation type="unfinished">EPISODENREGIE</translation>
+    </message>
+    <message>
+        <source>EPISODE DIRECTORS</source>
+        <translation type="unfinished">EPISODENREGIE</translation>
+    </message>
+    <message>
+        <source>EPISODE WRITER</source>
+        <translation type="unfinished">EPISODENDREHBUCH</translation>
+    </message>
+    <message>
+        <source>EPISODE WRITERS</source>
+        <translation type="unfinished">EPISODENDREHBUCH</translation>
+    </message>
+    <message>
+        <source>In sync</source>
+        <translation type="unfinished">Synchron</translation>
+    </message>
+    <message>
+        <source>Catching up</source>
+        <translation>Synchronisiert</translation>
+    </message>
+    <message>
+        <source>Buffering</source>
+        <translation>Puffern</translation>
+    </message>
+    <message>
+        <source>Not watching</source>
+        <translation type="unfinished">Schaut nichts</translation>
+    </message>
+    <message>
+        <source>Ready</source>
+        <translation type="unfinished">Bereit</translation>
+    </message>
+    <message>
+        <source>Joining</source>
+        <translation type="unfinished">Tritt bei</translation>
+    </message>
+    <message>
+        <source>In the lobby</source>
+        <translation type="unfinished">In der Lobby</translation>
+    </message>
+    <message>
+        <source>Starting</source>
+        <translation type="unfinished">Startet</translation>
+    </message>
+    <message>
+        <source>{0} watching</source>
+        <translation type="unfinished">{0} schauen</translation>
+    </message>
+    <message>
+        <source>Everyone controls</source>
+        <translation>Alle können steuern</translation>
+    </message>
+    <message>
+        <source>That PIN didn&apos;t work. Try again.</source>
+        <translation type="unfinished">Diese PIN hat nicht funktioniert. Versuche es erneut.</translation>
+    </message>
+    <message>
+        <source>Too many tries. Wait a minute.</source>
+        <translation type="unfinished">Zu viele Versuche. Warte eine Minute.</translation>
+    </message>
+    <message>
+        <source>This party is full.</source>
+        <translation type="unfinished">Diese Party ist voll.</translation>
+    </message>
+    <message>
+        <source>No room has that code.</source>
+        <translation type="unfinished">Kein Raum hat diesen Code.</translation>
+    </message>
+    <message>
+        <source>You don&apos;t have access to what they&apos;re watching.</source>
+        <translation type="unfinished">Du hast keinen Zugriff auf das, was gerade geschaut wird.</translation>
+    </message>
+    <message>
+        <source>Watch Parties are turned off on this server.</source>
+        <translation type="unfinished">Watch Partys sind auf diesem Server deaktiviert.</translation>
+    </message>
+    <message>
+        <source>Only the host can do that.</source>
+        <translation type="unfinished">Das kann nur der Gastgeber.</translation>
+    </message>
+    <message>
+        <source>That isn&apos;t allowed in this party.</source>
+        <translation type="unfinished">Das ist in dieser Party nicht erlaubt.</translation>
+    </message>
+    <message>
+        <source>Slow down a little.</source>
+        <translation type="unfinished">Mach etwas langsamer.</translation>
+    </message>
+    <message>
+        <source>{0} paused</source>
+        <translation type="unfinished">{0} hat pausiert</translation>
+    </message>
+    <message>
+        <source>{0} resumed</source>
+        <translation type="unfinished">{0} hat fortgesetzt</translation>
+    </message>
+    <message>
+        <source>{0} skipped to {1}</source>
+        <translation type="unfinished">{0} ist zu {1} gesprungen</translation>
+    </message>
+    <message>
+        <source>{0} joined</source>
+        <translation type="unfinished">{0} ist beigetreten</translation>
+    </message>
+    <message>
+        <source>{0} left</source>
+        <translation type="unfinished">{0} hat verlassen</translation>
+    </message>
+    <message>
+        <source>You&apos;re the host now</source>
+        <translation type="unfinished">Du bist jetzt der Gastgeber</translation>
+    </message>
+    <message>
+        <source>{0} is the host now</source>
+        <translation type="unfinished">{0} ist jetzt der Gastgeber</translation>
+    </message>
+    <message>
+        <source>{0} switched to {1}</source>
+        <translation type="unfinished">{0} hat zu {1} gewechselt</translation>
+    </message>
+    <message>
+        <source>Everyone can control playback now</source>
+        <translation>Alle können jetzt die Wiedergabe steuern</translation>
+    </message>
+    <message>
+        <source>Only the host can control playback now</source>
+        <translation type="unfinished">Nur der Gastgeber steuert jetzt die Wiedergabe</translation>
+    </message>
+    <message>
+        <source>{0} in the lobby</source>
+        <translation type="unfinished">{0} in der Lobby</translation>
+    </message>
+    <message>
+        <source>{0} started a watch party</source>
+        <translation type="unfinished">{0} hat eine Watch Party gestartet</translation>
+    </message>
+    <message>
+        <source>It&apos;s first in Watch Parties on Home</source>
+        <translation type="unfinished">Es steht an erster Stelle bei „Watch Partys“ auf der Startseite</translation>
+    </message>
+    <message>
+        <source>The watch party has ended.</source>
+        <translation type="unfinished">Die Watch Party ist beendet.</translation>
+    </message>
+    <message>
+        <source>{0} ended the party</source>
+        <translation type="unfinished">{0} hat die Party beendet</translation>
+    </message>
+    <message>
+        <source>You were removed from the watch party.</source>
+        <translation type="unfinished">Du wurdest aus der Watch Party entfernt.</translation>
+    </message>
+    <message>
+        <source>Reconnecting to the party...</source>
+        <translation type="unfinished">Verbinde erneut mit der Party...</translation>
+    </message>
+    <message>
+        <source>Room PIN</source>
+        <translation type="unfinished">Raum-PIN</translation>
+    </message>
+    <message>
+        <source>This party has a PIN</source>
+        <translation type="unfinished">Diese Party hat eine PIN</translation>
+    </message>
+    <message>
+        <source>Watch Parties need Moonbase on this server</source>
+        <translation type="unfinished">Watch Partys benötigen Moonbase auf diesem Server</translation>
+    </message>
+    <message>
+        <source>Watch Parties</source>
+        <translation type="unfinished">Watch Partys</translation>
+    </message>
+    <message>
+        <source>{0} on this server</source>
+        <translation type="unfinished">{0} auf diesem Server</translation>
+    </message>
+    <message>
+        <source>Start a watch party</source>
+        <translation type="unfinished">Eine Watch Party starten</translation>
+    </message>
+    <message>
+        <source>Join with a code</source>
+        <translation type="unfinished">Mit Code beitreten</translation>
+    </message>
+    <message>
+        <source>Parties you can watch show up here. Got a code from someone? Pick Join with a code.</source>
+        <translation type="unfinished">Partys, denen du beitreten kannst, erscheinen hier. Hast du einen Code bekommen? Wähle „Mit Code beitreten“.</translation>
+    </message>
+    <message>
+        <source>Ask whoever runs the server to install the Moonbase plugin.</source>
+        <translation type="unfinished">Bitte den Administrator des Servers, das Moonbase-Plugin zu installieren.</translation>
+    </message>
+    <message>
+        <source>Picking something to watch</source>
+        <translation type="unfinished">Es wird etwas zum Schauen ausgewählt</translation>
+    </message>
+    <message>
+        <source>Your watch party</source>
+        <translation type="unfinished">Deine Watch Party</translation>
+    </message>
+    <message>
+        <source>Send the invite</source>
+        <translation type="unfinished">Einladung senden</translation>
+    </message>
+    <message>
+        <source>Share this code with friends on this server. They pick Join with a code on their Watch Parties screen.</source>
+        <translation type="unfinished">Teile diesen Code mit Freunden auf diesem Server. Sie wählen auf ihrem Watch-Partys-Bildschirm „Mit Code beitreten“.</translation>
+    </message>
+    <message>
+        <source>Or send this link: {0}</source>
+        <translation type="unfinished">Oder sende diesen Link: {0}</translation>
+    </message>
+    <message>
+        <source>They&apos;ll need the room PIN too.</source>
+        <translation type="unfinished">Sie brauchen außerdem die Raum-PIN.</translation>
+    </message>
+    <message>
+        <source>In the lobby · {0}</source>
+        <translation type="unfinished">In der Lobby · {0}</translation>
+    </message>
+    <message>
+        <source>Play waits for everyone&apos;s player, 10 seconds at most, then counts down 3, 2, 1.</source>
+        <translation type="unfinished">Die Wiedergabe wartet auf die Player aller Teilnehmer, höchstens 10 Sekunden, und zählt dann 3, 2, 1 herunter.</translation>
+    </message>
+    <message>
+        <source>Search movies</source>
+        <translation type="unfinished">Filme suchen</translation>
+    </message>
+    <message>
+        <source>Nothing found yet.</source>
+        <translation type="unfinished">Noch nichts gefunden.</translation>
+    </message>
+    <message>
+        <source>Press OK to pick it for everyone</source>
+        <translation type="unfinished">Drücke OK, um es für alle auszuwählen</translation>
+    </message>
+    <message>
+        <source>Press OK to add it to the vote</source>
+        <translation type="unfinished">Drücke OK, um es zur Abstimmung hinzuzufügen</translation>
+    </message>
+    <message>
+        <source>Back to the lobby</source>
+        <translation type="unfinished">Zurück zur Lobby</translation>
+    </message>
+    <message>
+        <source>Watch with the party</source>
+        <translation type="unfinished">Mit der Party schauen</translation>
+    </message>
+    <message>
+        <source>Up next</source>
+        <translation type="unfinished">Als Nächstes</translation>
+    </message>
+    <message>
+        <source>Start for everyone</source>
+        <translation type="unfinished">Für alle starten</translation>
+    </message>
+    <message>
+        <source>Waiting for the host to start.</source>
+        <translation type="unfinished">Warte darauf, dass der Gastgeber startet.</translation>
+    </message>
+    <message>
+        <source>Waiting for the host to pick something.</source>
+        <translation type="unfinished">Warte darauf, dass der Gastgeber etwas auswählt.</translation>
+    </message>
+    <message>
+        <source>Vote on what to watch</source>
+        <translation type="unfinished">Stimmt ab, was geschaut wird</translation>
+    </message>
+    <message>
+        <source>Let everyone vote on movies</source>
+        <translation type="unfinished">Alle über Filme abstimmen lassen</translation>
+    </message>
+    <message>
+        <source>No movies to vote on yet.</source>
+        <translation type="unfinished">Noch keine Filme zur Abstimmung.</translation>
+    </message>
+    <message>
+        <source>Press OK to vote</source>
+        <translation type="unfinished">Drücke OK, um abzustimmen</translation>
+    </message>
+    <message>
+        <source>Press OK to play it for everyone</source>
+        <translation type="unfinished">Drücke OK, um es für alle abzuspielen</translation>
+    </message>
+    <message>
+        <source>{0} votes</source>
+        <translation type="unfinished">{0} Stimmen</translation>
+    </message>
+    <message>
+        <source>1 vote</source>
+        <translation type="unfinished">1 Stimme</translation>
+    </message>
+    <message>
+        <source>You voted</source>
+        <translation type="unfinished">Du hast abgestimmt</translation>
+    </message>
+    <message>
+        <source>Search for a movie or an episode to pick what everyone watches.</source>
+        <translation type="unfinished">Suche nach einem Film oder einer Episode, um auszuwählen, was alle schauen.</translation>
+    </message>
+    <message>
+        <source>Leave</source>
+        <translation type="unfinished">Verlassen</translation>
+    </message>
+    <message>
+        <source>End for everyone</source>
+        <translation>Für alle beenden</translation>
+    </message>
+    <message>
+        <source>Room code or invite link</source>
+        <translation type="unfinished">Raumcode oder Einladungslink</translation>
+    </message>
+    <message>
+        <source>Starting together</source>
+        <translation type="unfinished">Gemeinsamer Start</translation>
+    </message>
+    <message>
+        <source>Waiting for {0}&apos;s player</source>
+        <translation type="unfinished">Warte auf den Player von {0}</translation>
+    </message>
+    <message>
+        <source>Waiting for everyone&apos;s player</source>
+        <translation type="unfinished">Warte auf die Player aller Teilnehmer</translation>
+    </message>
+    <message>
+        <source>Starting anyway in {0} s</source>
+        <translation type="unfinished">Startet trotzdem in {0} s</translation>
+    </message>
+    <message>
+        <source>Haha</source>
+        <translation>Haha</translation>
+    </message>
+    <message>
+        <source>No way</source>
+        <translation type="unfinished">Auf keinen Fall</translation>
+    </message>
+    <message>
+        <source>Pause please</source>
+        <translation type="unfinished">Bitte pausieren</translation>
+    </message>
+    <message>
+        <source>Brb</source>
+        <translation>Bin gleich zurück</translation>
+    </message>
+    <message>
+        <source>Send to the party</source>
+        <translation type="unfinished">An die Party senden</translation>
+    </message>
+    <message>
+        <source>Room code {0}</source>
+        <translation type="unfinished">Raumcode {0}</translation>
+    </message>
+    <message>
+        <source>People · {0}</source>
+        <translation type="unfinished">Personen · {0}</translation>
+    </message>
+    <message>
+        <source>Room settings</source>
+        <translation type="unfinished">Raumeinstellungen</translation>
+    </message>
+    <message>
+        <source>Everyone can control playback</source>
+        <translation>Jeder kann die Wiedergabe steuern</translation>
+    </message>
+    <message>
+        <source>4 to 8 digits</source>
+        <translation type="unfinished">4 bis 8 Ziffern</translation>
+    </message>
+    <message>
+        <source>A room PIN is 4 to 8 digits.</source>
+        <translation type="unfinished">Eine Raum-PIN hat 4 bis 8 Ziffern.</translation>
+    </message>
+    <message>
+        <source>Host</source>
+        <translation>Gastgeber</translation>
+    </message>
+    <message>
+        <source>Make host</source>
+        <translation type="unfinished">Zum Gastgeber machen</translation>
+    </message>
+    <message>
+        <source>Chat and reactions are in the controls</source>
+        <translation type="unfinished">Chat und Reaktionen findest du in den Steuerelementen</translation>
+    </message>
+    <message>
+        <source>Chat and reactions</source>
+        <translation type="unfinished">Chat und Reaktionen</translation>
+    </message>
+    <message>
+        <source>Only the host can control playback.</source>
+        <translation type="unfinished">Nur der Gastgeber kann die Wiedergabe steuern.</translation>
+    </message>
+    <message>
+        <source>Watch party</source>
+        <translation type="unfinished">Watch Party</translation>
+    </message>
+    <message>
+        <source>Watch with friends on this server, everyone in step</source>
+        <translation type="unfinished">Schau gemeinsam mit Freunden auf diesem Server, alle synchron</translation>
+    </message>
+    <message>
+        <source>Anyone on this server can invite you, and you can start your own. Chat, reactions and a vote on what to watch come with it.</source>
+        <translation type="unfinished">Jeder auf diesem Server kann dich einladen, und du kannst deine eigene starten. Chat, Reaktionen und eine Abstimmung, was geschaut wird, sind dabei.</translation>
+    </message>
+    <message>
+        <source>Nothing runs in the background until you&apos;re in a party.</source>
+        <translation type="unfinished">Im Hintergrund läuft nichts, bis du in einer Party bist.</translation>
+    </message>
+    <message>
+        <source>Open Watch Parties</source>
+        <translation type="unfinished">Watch Partys öffnen</translation>
+    </message>
+    <message>
+        <source>Start one or join one in progress</source>
+        <translation type="unfinished">Starte eine oder tritt einer laufenden bei</translation>
+    </message>
+    <message>
+        <source>Show chat over the video</source>
+        <translation type="unfinished">Chat über dem Video anzeigen</translation>
+    </message>
+    <message>
+        <source>New messages show for a few seconds</source>
+        <translation type="unfinished">Neue Nachrichten werden ein paar Sekunden lang angezeigt</translation>
+    </message>
+    <message>
+        <source>Party alerts</source>
+        <translation type="unfinished">Party-Benachrichtigungen</translation>
+    </message>
+    <message>
+        <source>Show a banner when someone on this server starts one</source>
+        <translation type="unfinished">Ein Banner anzeigen, wenn jemand auf diesem Server eine startet</translation>
+    </message>
+    <message>
+        <source>Stalled</source>
+        <translation type="unfinished">Hängt</translation>
+    </message>
+    <message>
+        <source>Downloaded, waiting for import</source>
+        <translation type="unfinished">Heruntergeladen, wartet auf Import</translation>
+    </message>
+    <message>
+        <source>%1m left</source>
+        <translation type="unfinished">&apos;noch %1 Min.&apos;</translation>
+    </message>
+    <message>
+        <source>%1h left</source>
+        <translation type="unfinished">&apos;noch %1 Std.&apos;</translation>
+    </message>
+    <message>
+        <source>%1h %2m left</source>
+        <translation type="unfinished">&apos;noch %1 Std. %2 Min.&apos;</translation>
+    </message>
+    <message>
+        <source>Import blocked</source>
+        <translation type="unfinished">Import blockiert</translation>
+    </message>
+    <message>
+        <source>Not found yet</source>
+        <translation type="unfinished">Noch nicht gefunden</translation>
+    </message>
+    <message>
+        <source>Get a different release</source>
+        <translation type="unfinished">Anderes Release holen</translation>
+    </message>
+    <message>
+        <source>^0 will remove ^1 from the download client, block it so it isn&apos;t grabbed again, and search for another release.</source>
+        <translation type="unfinished">^0 entfernt ^1 aus dem Download-Client, blockiert es, damit es nicht erneut geholt wird, und sucht nach einem anderen Release.</translation>
+    </message>
+    <message>
+        <source>Removed. ^0 is searching for another release.</source>
+        <translation type="unfinished">Entfernt. ^0 sucht nach einem anderen Release.</translation>
+    </message>
+    <message>
+        <source>That download had already left the ^0 queue.</source>
+        <translation type="unfinished">Dieser Download war bereits nicht mehr in der Warteschlange von ^0.</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t remove the download</source>
+        <translation type="unfinished">Der Download konnte nicht entfernt werden</translation>
+    </message>
+    <message>
+        <source>Party code</source>
+        <translation type="unfinished">Party-Code</translation>
+    </message>
+    <message>
+        <source>Start a party, or join one with the code someone sent you.</source>
+        <translation type="unfinished">Starte eine Party oder tritt einer mit dem Code bei, den dir jemand geschickt hat.</translation>
+    </message>
+    <message>
+        <source>Watch Parties aren&apos;t available on this server.</source>
+        <translation type="unfinished">Watch Partys sind auf diesem Server nicht verfügbar.</translation>
+    </message>
+    <message>
+        <source>Watch Parties need Roku OS 16 or later.</source>
+        <translation type="unfinished">Watch Partys erfordern Roku OS 16 oder neuer.</translation>
+    </message>
+    <message>
+        <source>Update this Roku in Settings &gt; System &gt; System update.</source>
+        <translation type="unfinished">Aktualisiere diesen Roku unter Einstellungen &gt; System &gt; Systemaktualisierung.</translation>
+    </message>
+    <message>
+        <source>Play waits for everyone&apos;s player, then everyone starts together.</source>
+        <translation type="unfinished">Die Wiedergabe wartet auf die Player aller Teilnehmer, dann starten alle gemeinsam.</translation>
+    </message>
+    <message>
+        <source>Start from the beginning</source>
+        <translation type="unfinished">Von vorne beginnen</translation>
+    </message>
+    <message>
+        <source>Resume at {0}</source>
+        <translation type="unfinished">Fortsetzen bei {0}</translation>
+    </message>
+    <message>
+        <source>Picks up where {0} stopped, the earliest anyone got to.</source>
+        <translation type="unfinished">Setzt dort fort, wo {0} aufgehört hat, an der frühesten Stelle, die jemand erreicht hat.</translation>
+    </message>
+    <message>
+        <source>Picks up where you stopped.</source>
+        <translation type="unfinished">Setzt dort fort, wo du aufgehört hast.</translation>
+    </message>
+    <message>
+        <source>Picks up where the earliest viewer stopped.</source>
+        <translation type="unfinished">Setzt dort fort, wo der früheste Zuschauer aufgehört hat.</translation>
+    </message>
+    <message>
+        <source>1 hasn&apos;t started it yet.</source>
+        <translation type="unfinished">1 Person hat es noch nicht gestartet.</translation>
+    </message>
+    <message>
+        <source>{0} haven&apos;t started it yet.</source>
+        <translation type="unfinished">{0} Personen haben es noch nicht gestartet.</translation>
+    </message>
+    <message>
+        <source>That party code didn&apos;t match a party.</source>
+        <translation type="unfinished">Zu diesem Party-Code gibt es keine Party.</translation>
+    </message>
+    <message>
+        <source>That watch party has ended.</source>
+        <translation type="unfinished">Diese Watch Party ist beendet.</translation>
+    </message>
+    <message>
+        <source>That watch party is full.</source>
+        <translation type="unfinished">Diese Watch Party ist voll.</translation>
+    </message>
+    <message>
+        <source>This server&apos;s watch parties can&apos;t do that.</source>
+        <translation type="unfinished">Die Watch Partys dieses Servers können das nicht.</translation>
+    </message>
+    <message>
+        <source>You joined this party on another device.</source>
+        <translation type="unfinished">Du bist dieser Party auf einem anderen Gerät beigetreten.</translation>
+    </message>
+    <message>
+        <source>Guests can play and pause</source>
+        <translation type="unfinished">Gäste können abspielen und pausieren</translation>
+    </message>
+    <message>
+        <source>Picked for the Watch Party</source>
+        <translation type="unfinished">Für die Watch Party ausgewählt</translation>
+    </message>
+    <message>
+        <source>Added to the Watch Party vote</source>
+        <translation type="unfinished">Zur Abstimmung der Watch Party hinzugefügt</translation>
+    </message>
+    <message>
+        <source>Vote for what you want to watch. The host plays one.</source>
+        <translation type="unfinished">Stimme ab, was du sehen möchtest. Der Gastgeber spielt einen Titel ab.</translation>
+    </message>
+    <message>
+        <source>Add movies for everyone to vote on, then play the one you want. TV episodes are still your pick.</source>
+        <translation type="unfinished">Füge Filme hinzu, über die alle abstimmen können, und spiele dann den gewünschten ab. Serienepisoden wählst weiterhin du aus.</translation>
+    </message>
+    <message>
+        <source>Watch Parties Button</source>
+        <translation type="unfinished">Watch-Partys-Taste</translation>
+    </message>
+    <message>
+        <source>Show the Watch Parties button on the navigation bar</source>
+        <translation type="unfinished">Die Watch-Partys-Taste in der Navigationsleiste anzeigen</translation>
+    </message>
+    <message>
+        <source>Subtitles for everyone</source>
+        <translation type="unfinished">Untertitel für alle</translation>
+    </message>
+    <message>
+        <source>Each person&apos;s choice</source>
+        <translation type="unfinished">Wahl jeder Person</translation>
+    </message>
+    <message>
+        <source>Moonbase couldn&apos;t keep the subtitles for everyone.</source>
+        <translation type="unfinished">Moonbase konnte die Untertitel nicht für alle übernehmen.</translation>
+    </message>
+    <message>
+        <source>Hide Watched</source>
+        <translation type="unfinished">Gesehenes ausblenden</translation>
+    </message>
+    <message>
+        <source>Hide watched content from Recently Added and Recently Released home rows.</source>
+        <translation type="unfinished">Gesehene Inhalte in den Startseitenzeilen „Kürzlich hinzugefügt“ und „Kürzlich erschienen“ ausblenden.</translation>
+    </message>
+    <message>
+        <source>Syncing playback to {0}</source>
+        <translation type="unfinished">Wiedergabe wird mit {0} synchronisiert</translation>
+    </message>
 </context>
 </TS>
