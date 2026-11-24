@@ -11330,5 +11330,21 @@
         <extracomment>Title of a row a Silo server offers for Home</extracomment>
         <translation>Trending This Week</translation>
     </message>
+    <message>
+        <source>15 seconds</source>
+        <translation>15 seconds</translation>
+    </message>
+    <message>
+        <source>Shuffle Backdrops</source>
+        <translation>Shuffle Backdrops</translation>
+    </message>
+    <message>
+        <source>Display backdrops in server or randomized order</source>
+        <translation>Display backdrops in server or randomized order</translation>
+    </message>
+    <message>
+        <source>Backdrop Duration</source>
+        <translation>Backdrop Duration</translation>
+    </message>
 </context>
 </TS>

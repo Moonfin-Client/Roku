@@ -1,4 +1,5 @@
 import "pkg:/source/api/Image.bs"
+import "pkg:/source/utils/detailsBackdropCycle.bs"
 import "pkg:/source/utils/detailMetadataLayout.bs"
 import "pkg:/source/utils/detailSectionLayout.bs"
 import "pkg:/source/utils/misc.bs"
@@ -308,14 +309,125 @@ function getMonthName(month as integer) as string
     return ""
 end function
 
+sub observeDetailsBackdropSettings()
+    if m.detailsBackdropSettingsObserved = true then return
+    if isValid(m.global) and m.global.hasField("sessionVersion")
+        m.global.observeFieldScoped("sessionVersion", "onDetailsBackdropSettingsChanged")
+        m.detailsBackdropSettingsObserved = true
+    end if
+end sub
+
+sub unobserveDetailsBackdropSettings()
+    if m.detailsBackdropSettingsObserved <> true then return
+    if isValid(m.global) and m.global.hasField("sessionVersion")
+        m.global.unobserveFieldScoped("sessionVersion")
+    end if
+    m.detailsBackdropSettingsObserved = false
+end sub
+
+sub onDetailsBackdropSettingsChanged()
+    if m.detailsScreenActive <> true then return
+    backdropPoster = m.top.findNode("backdrop")
+    shown = get_user_setting_bool("ui.itemdetail.showBackdrop", true)
+    if isValid(backdropPoster)
+        backdropPoster.visible = shown
+    end if
+    applyBackdropTreatment()
+    if not isValid(m.detailsBackdropSource) or m.detailsBackdropSource.count() <= 1 then return
+    if not shown
+        stopDetailsBackdropCycle()
+        return
+    end if
+    if isValid(m.detailsBackdropTimer) and m.detailsBackdropTimer.control = "start"
+        nextDuration = detailsBackdropCycle.IntervalSeconds()
+        if m.detailsBackdropTimer.duration <> nextDuration
+            m.detailsBackdropTimer.control = "stop"
+            m.detailsBackdropTimer.duration = nextDuration
+            m.detailsBackdropTimer.control = "start"
+        end if
+    else
+        resumeDetailsBackdropCycle()
+    end if
+end sub
+
+sub stopDetailsBackdropCycle()
+    if m.detailsScreenActive <> true then unobserveDetailsBackdropSettings()
+    if isValid(m.detailsBackdropTimer)
+        m.detailsBackdropTimer.control = "stop"
+    end if
+end sub
+
+sub resumeDetailsBackdropCycle()
+    if m.detailsScreenActive <> true then return
+    observeDetailsBackdropSettings()
+    if not isValid(m.detailsBackdropSource) or m.detailsBackdropSource.count() <= 1 then return
+    if not get_user_setting_bool("ui.itemdetail.showBackdrop", true)
+        stopDetailsBackdropCycle()
+        return
+    end if
+    subtype = m.top.subtype()
+    if subtype = "QuickLookItemDetails" or subtype = "FrostItemDetails" then return
+
+    if not isValid(m.detailsBackdropTimer)
+        m.detailsBackdropTimer = CreateObject("roSGNode", "Timer")
+        m.detailsBackdropTimer.repeat = true
+        m.detailsBackdropTimer.observeField("fire", "onDetailsBackdropTimerFire")
+    end if
+    m.detailsBackdropTimer.duration = detailsBackdropCycle.IntervalSeconds()
+    m.detailsBackdropTimer.control = "start"
+end sub
+
+sub onDetailsBackdropTimerFire()
+    if not isValid(m.detailsBackdropOrder) or m.detailsBackdropOrder.count() <= 1 then return
+    backdropPoster = m.top.findNode("backdrop")
+    if not isValid(backdropPoster) or not backdropPoster.visible then return
+
+    nextDuration = detailsBackdropCycle.IntervalSeconds()
+    if isValid(m.detailsBackdropTimer) and m.detailsBackdropTimer.duration <> nextDuration
+        m.detailsBackdropTimer.duration = nextDuration
+    end if
+
+    nextIndex = (m.detailsBackdropIndex ?? 0) + 1
+    if nextIndex >= m.detailsBackdropOrder.count()
+        lastShown = m.detailsBackdropOrder[m.detailsBackdropOrder.count() - 1]
+        m.detailsBackdropOrder = detailsBackdropCycle.BuildCycleOrder(m.detailsBackdropSource, detailsBackdropCycle.ShuffleEnabled(), lastShown)
+        nextIndex = 0
+    end if
+    m.detailsBackdropIndex = nextIndex
+    backdropPoster.uri = m.detailsBackdropOrder[nextIndex]
+end sub
+
 sub setBackdropImage(itemData as object)
     backdropPoster = m.top.findNode("backdrop")
     if not isValid(backdropPoster) then return
+    stopDetailsBackdropCycle()
+    m.detailsBackdropSource = []
+    m.detailsBackdropOrder = []
+    m.detailsBackdropIndex = 0
+
     ' Hidden rather than left empty, since some cards fall back to this picture for their art
     backdropPoster.visible = get_user_setting_bool("ui.itemdetail.showBackdrop", true)
 
-    backdropUrl = backdropImageUrl(itemData, backdropRequestParams({ "maxWidth": 1920, "maxHeight": 1080, "quality": 90 }))
-    if isValid(backdropUrl) then backdropPoster.uri = backdropUrl
+    params = backdropRequestParams({ "maxWidth": 1920, "maxHeight": 1080, "quality": 90 })
+    urls = detailsBackdropCycle.BackdropUrlsForItem(itemData, params)
+    if urls.count() = 0
+        backdropUrl = backdropImageUrl(itemData, params)
+        if isValid(backdropUrl) then backdropPoster.uri = backdropUrl
+        return
+    end if
+
+    subtype = m.top.subtype()
+    ' Frost and Quick Look intentionally display a static backdrop without cycling
+    if urls.count() = 1 or subtype = "QuickLookItemDetails" or subtype = "FrostItemDetails"
+        backdropPoster.uri = urls[0]
+        return
+    end if
+
+    m.detailsBackdropSource = urls
+    m.detailsBackdropOrder = detailsBackdropCycle.BuildCycleOrder(urls, detailsBackdropCycle.ShuffleEnabled())
+    m.detailsBackdropIndex = 0
+    backdropPoster.uri = m.detailsBackdropOrder[0]
+    if backdropPoster.visible then resumeDetailsBackdropCycle()
 end sub
 
 function backdropImageUrl(itemData as object, params as object) as dynamic
