@@ -3726,5 +3726,165 @@
         <source>Critic Rating</source>
         <translation>Kritikerbetyg</translation>
     </message>
+    <message>
+        <source>Enter your PIN to restore the full app</source>
+        <translation>Ange din PIN-kod för att återställa hela appen</translation>
+    </message>
+    <message>
+        <source>Exit Kids Mode</source>
+        <translation>Avsluta barnläget</translation>
+    </message>
+    <message>
+        <source>Kids Mode</source>
+        <translation>Barnläge</translation>
+    </message>
+    <message>
+        <source>Simplify the app and lock the way out with a PIN</source>
+        <translation>Förenkla appen och lås utgången med en PIN-kod</translation>
+    </message>
+    <message>
+        <source>Direct playing</source>
+        <translation>Direktuppspelning</translation>
+    </message>
+    <message>
+        <source>Writer</source>
+        <translation>Författare</translation>
+    </message>
+    <message>
+        <source>Remove from Collection</source>
+        <translation>Ta bort från samlingen</translation>
+    </message>
+    <message>
+        <source>Remove {item} from {collection}? The item stays in your library.</source>
+        <translation>Ta bort {item} från {collection}? Objektet finns kvar i ditt bibliotek.</translation>
+    </message>
+    <message>
+        <source>Blocking a rating also blocks everything stronger than it.</source>
+        <translation>Om man blockerar ett betyg blockeras även alla betyg som är högre än det.</translation>
+    </message>
+    <message>
+        <source>Only blocks itself</source>
+        <translation>Blockerar endast sig själv</translation>
+    </message>
+    <message>
+        <source>This isn&apos;t available</source>
+        <translation>Det här finns inte tillgängligt</translation>
+    </message>
+    <message>
+        <source>Show the Live TV button in the navigation bar when the server has a Live TV library</source>
+        <translation>Visa knappen ”Live-TV” i navigeringsfältet när servern har ett Live-TV-bibliotek</translation>
+    </message>
+    <message>
+        <source>Absolute</source>
+        <translation>Absolut</translation>
+    </message>
+    <message>
+        <source>You</source>
+        <translation>Du</translation>
+    </message>
+    <message>
+        <source>Auto Hide Skip Button</source>
+        <translation>Dölj knappen ”Hoppa över” automatiskt</translation>
+    </message>
+    <message>
+        <source>Automatically dismiss the skip intro and outro button after a few seconds.</source>
+        <translation>Dölj automatiskt knappen för att hoppa över intro och outro efter några sekunder.</translation>
+    </message>
+    <message>
+        <source>Choose how many Since You Watched rows to display (1-5)</source>
+        <translation>Välj hur många rader från ”Sedan du tittade på” som ska visas (1–5)</translation>
+    </message>
+    <message>
+        <source>Choose type of items to recommend</source>
+        <translation>Välj vilken typ av artiklar som ska rekommenderas</translation>
+    </message>
+    <message>
+        <source>Choose which source item to base recommendations on</source>
+        <translation>Välj vilket källobjekt rekommendationerna ska baseras på</translation>
+    </message>
+    <message>
+        <source>Display Studio Row</source>
+        <translation>Display Studio-rad</translation>
+    </message>
+    <message>
+        <source>Display customizable posters that expand on focus. Disable to always show landscape thumbnail.</source>
+        <translation>Visa anpassningsbara affischer som fördjupar fokusområdet. Inaktivera för att alltid visa miniatyrbilder i liggande format.</translation>
+    </message>
+    <message>
+        <source>Expand TV shows to display each episode separately.</source>
+        <translation>Visa TV-serier i utökat läge för att visa varje avsnitt separat.</translation>
+    </message>
+    <message>
+        <source>Include Previously Watched</source>
+        <translation>Inkludera tidigare visade</translation>
+    </message>
+    <message>
+        <source>Include watched items in recommendations</source>
+        <translation>Inkludera titlar som du har sett i rekommendationerna</translation>
+    </message>
+    <message>
+        <source>Number of Rows to Add</source>
+        <translation>Antal rader som ska läggas till</translation>
+    </message>
+    <message>
+        <source>Recommendation Source</source>
+        <translation>Källa till rekommendationen</translation>
+    </message>
+    <message>
+        <source>Show Individual Episodes</source>
+        <translation>Visa enskilda avsnitt</translation>
+    </message>
+    <message>
+        <source>Show Studio row in Home Sections.</source>
+        <translation>Visa raden ”Studio” under ”Hem”-avsnitten.</translation>
+    </message>
+    <message>
+        <source>Sort Collections rows in ascending or descending order.</source>
+        <translation>Sortera raderna i samlingarna i stigande eller fallande ordning.</translation>
+    </message>
+    <message>
+        <source>Source Item</source>
+        <translation>Källobjekt</translation>
+    </message>
+    <message>
+        <source>Source Type</source>
+        <translation>Källtyp</translation>
+    </message>
+    <message>
+        <source>Titles Under Posters</source>
+        <translation>Rubriker under affischer</translation>
+    </message>
+    <message>
+        <source>Show each item&apos;s title and details below its artwork in library grids.</source>
+        <translation>Visa varje objekts titel och information under dess omslagsbild i bibliotekets rutnät.</translation>
+    </message>
+    <message>
+        <source>Date Format</source>
+        <translation>Datumformat</translation>
+    </message>
+    <message>
+        <source>Choose between month-day, day-month, or locale default for calendar and release dates</source>
+        <translation>Välj mellan månad-dag, dag-månad eller lokala standardinställningar för kalender- och utgivningsdatum</translation>
+    </message>
+    <message>
+        <source>Locale Default</source>
+        <translation>Standardinställning för språk</translation>
+    </message>
+    <message>
+        <source>Month / Day (Nov 10)</source>
+        <translation>Månad / Dag (10 nov)</translation>
+    </message>
+    <message>
+        <source>Day / Month (10 Nov)</source>
+        <translation>Dag / Månad (10 nov)</translation>
+    </message>
+    <message>
+        <source>Continue Reading</source>
+        <translation>Fortsätt läsa</translation>
+    </message>
+    <message>
+        <source>Recently Released Episodes</source>
+        <translation>Nyligen släppta avsnitt</translation>
+    </message>
 </context>
 </TS>
