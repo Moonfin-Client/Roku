@@ -7757,5 +7757,13 @@
         <source>Hide watched content from Recently Added and Recently Released home rows.</source>
         <translation>从“最近添加”和“最近发布”首页栏目中隐藏已观看的内容。</translation>
     </message>
+    <message>
+        <source>Continue Reading</source>
+        <translation>继续阅读</translation>
+    </message>
+    <message>
+        <source>Recently Released Episodes</source>
+        <translation>最近发布的剧集</translation>
+    </message>
 </context>
 </TS>
