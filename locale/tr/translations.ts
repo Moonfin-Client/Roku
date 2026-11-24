@@ -6501,5 +6501,13 @@
         <source>Hide the badge showing how many episodes are left to watch.</source>
         <translation>İzlenecek kaç bölüm kaldığını gösteren rozeti gizler.</translation>
     </message>
+    <message>
+        <source>Continue Reading</source>
+        <translation>Okumaya Devam Et</translation>
+    </message>
+    <message>
+        <source>Recently Released Episodes</source>
+        <translation>Son Yayınlanan Bölümler</translation>
+    </message>
 </context>
 </TS>
