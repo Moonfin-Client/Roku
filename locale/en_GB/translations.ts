@@ -4739,5 +4739,13 @@
         <source>Dim video and show overview text while paused</source>
         <translation>Dim video and show overview text while paused</translation>
     </message>
+    <message>
+        <source>Continue Reading</source>
+        <translation>Continue Reading</translation>
+    </message>
+    <message>
+        <source>Recently Released Episodes</source>
+        <translation>Recently Released Episodes</translation>
+    </message>
 </context>
 </TS>
