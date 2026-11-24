@@ -479,102 +479,87 @@ namespace silo
         me = 0
         if account.id <> invalid then me = account.id.ToStr().ToInt()
         m.siloSeerrMe = me
-        if me > 0 and isValidAndNotEmpty(account.username)
-            mine = {}
-            mine["n_" + me.ToStr()] = account.username.ToStr()
-            silo.RequesterKeep(silo.RequesterNamesOf(r), mine)
-        end if
+        mine = { mineAt: silo.NowSeconds() }
+        if me > 0 and isValidAndNotEmpty(account.username) then mine["n_" + me.ToStr()] = account.username.ToStr()
+        silo.RequesterKeep(silo.RequesterNamesOf(r), mine)
         permissions = 32 + 262144 + 524288
         if manage then permissions = permissions + 16
         return { id: me, displayName: account.username, permissions: permissions }
     end function
 
     ' The account names a profile's requests are shown with, by account id, and when they were last
-    ' read. Each Seerr screen and row reads on a task of its own, so they are kept on a node of the
-    ' global node, a field each under a prefix for the server and profile. A thread without that node
-    ' keeps its own
-    function RequesterNamesOf(r as object) as object
-        digest = CreateObject("roEVPDigest")
-        digest.Setup("md5")
-        bytes = CreateObject("roByteArray")
-        bytes.FromAsciiString(r.server + "|" + r.profileId)
-        prefix = "r" + Left(digest.Process(bytes), 16) + "_"
-        if type(m.global) = "roSGNode" and m.global.hasField("siloSeerrRequesters") then return { store: m.global.siloSeerrRequesters, prefix: prefix }
-        if type(m.siloSeerrNames) <> "roAssociativeArray" then m.siloSeerrNames = {}
-        return { store: m.siloSeerrNames, prefix: prefix }
+    ' read. Each Seerr screen and row reads on a task of its own, so they're kept on a node of the
+    ' global node, a field each under a prefix for the server and profile
+    function RequesterNamesOf(r as object) as dynamic
+        if m.global = invalid then return invalid
+        store = m.global.siloSeerrRequesters
+        if store = invalid then return invalid
+        return { store: store, prefix: "r" + silo.StableId(r.server + "|" + r.profileId).ToStr() + "_" }
     end function
 
-    function RequesterRecall(kept as object, name as string) as dynamic
-        if type(kept.store) = "roSGNode" then return kept.store.getField(kept.prefix + name)
-        return kept.store[kept.prefix + name]
-    end function
-
-    sub RequesterKeep(kept as object, fields as object)
+    sub RequesterKeep(kept as dynamic, fields as object)
+        if kept = invalid then return
         prefixed = {}
         for each name in fields
             prefixed[kept.prefix + name] = fields[name]
         end for
-        if type(kept.store) = "roSGNode"
-            kept.store.update(prefixed, true)
-        else
-            kept.store.Append(prefixed)
-        end if
+        kept.store.update(prefixed, true)
     end sub
 
-    ' Whether a read kept under name is missing or more than a minute old
-    function RequesterReadDue(kept as object, name as string) as boolean
-        at = silo.RequesterRecall(kept, name)
+    function RequesterReadDue(at as dynamic) as boolean
         return at = invalid or silo.NowSeconds() - at > 60
     end function
 
     ' Silo's requests name their requester by account id only. The viewer's own name comes from
-    ' /account/me; an admin, who sees everyone's, reads the account names when one isn't known yet,
-    ' each at most once a minute. A long account list is read 20 pages at a time, and the next request
-    ' list that still has someone unknown goes on from where the last read stopped. A request whose
-    ' requester stays unknown shows as by Unknown
+    ' /account/me, and an admin, who sees everyone's, reads the account names when one isn't known
+    ' yet, each at most once a minute. The names are read all at once, since each read of the node
+    ' from a task waits on the render thread
     sub AddRequesterNames(r as object, requests as object)
         kept = silo.RequesterNamesOf(r)
-        if silo.RequesterUnknown(kept, requests) and silo.RequesterReadDue(kept, "mineAt")
+        if kept = invalid then return
+        known = kept.store.getFields()
+        if silo.FillRequesterNames(kept.prefix, known, requests) and silo.RequesterReadDue(known[kept.prefix + "mineAt"])
             silo.SeerrCurrentUser(r)
-            silo.RequesterKeep(kept, { mineAt: silo.NowSeconds() })
+            known = kept.store.getFields()
         end if
-        cursor = silo.RequesterRecall(kept, "cursor") ?? ""
-        if silo.RequesterUnknown(kept, requests) and (cursor <> "" or silo.RequesterReadDue(kept, "readAt")) and silo.SeerrIsAdmin(r)
+        if silo.FillRequesterNames(kept.prefix, known, requests) and silo.RequesterReadDue(known[kept.prefix + "readAt"]) and silo.SeerrIsAdmin(r)
+            names = {}
+            cursor = ""
             guard = 0
-            while guard < 20
+            while guard < 40
                 guard++
                 query = { limit: 100 }
                 if cursor <> "" then query.cursor = cursor
                 body = silo.SeerrGet(r, "/admin/users", query)
-                names = {}
                 for each user in silo.SeerrList(body.items)
                     ' Silo's ids are strings
-                    if type(user) = "roAssociativeArray" and user.id <> invalid and isValidAndNotEmpty(user.username)
-                        names["n_" + user.id.ToStr().ToInt().ToStr()] = user.username.ToStr()
-                    end if
+                    if type(user) = "roAssociativeArray" and user.id <> invalid and isValidAndNotEmpty(user.username) then names["n_" + user.id.ToStr().ToInt().ToStr()] = user.username.ToStr()
                 end for
-                silo.RequesterKeep(kept, names)
                 cursor = ""
                 if type(body.page) = "roAssociativeArray" and isValidAndNotEmpty(body.page.next_cursor) then cursor = body.page.next_cursor
                 if cursor = "" then exit while
             end while
-            ' Kept once the names are in, so another task reading at the same time doesn't skip its own
-            ' read and draw its tiles before they arrive
-            silo.RequesterKeep(kept, { cursor: cursor, readAt: silo.NowSeconds() })
+            ' Kept with the names, so another task reading at the same time doesn't skip its own read
+            names.readAt = silo.NowSeconds()
+            silo.RequesterKeep(kept, names)
+            silo.FillRequesterNames(kept.prefix, kept.store.getFields(), requests)
         end if
-        for each req in requests
-            if type(req.requestedBy) = "roAssociativeArray" and req.requestedBy.id <> invalid
-                name = silo.RequesterRecall(kept, "n_" + req.requestedBy.id.ToStr())
-                if name <> invalid then req.requestedBy.displayName = name
-            end if
-        end for
     end sub
 
-    function RequesterUnknown(kept as object, requests as object) as boolean
+    ' Puts the known names on the requests, and whether any requester is still unknown
+    function FillRequesterNames(prefix as string, known as object, requests as object) as boolean
+        unknown = false
         for each req in requests
-            if type(req.requestedBy) = "roAssociativeArray" and req.requestedBy.id <> invalid and silo.RequesterRecall(kept, "n_" + req.requestedBy.id.ToStr()) = invalid then return true
+            if type(req.requestedBy) = "roAssociativeArray" and req.requestedBy.id <> invalid
+                name = known[prefix + "n_" + req.requestedBy.id.ToStr()]
+                if name = invalid
+                    unknown = true
+                else
+                    req.requestedBy.displayName = name
+                end if
+            end if
         end for
-        return false
+        return unknown
     end function
 
     function SeerrStatus(r as object) as object
