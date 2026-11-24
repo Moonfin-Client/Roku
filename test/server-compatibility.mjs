@@ -251,6 +251,12 @@ for (const name of ['ConnectionRank', 'ServerFromResource', 'Settled', 'MachineI
     source += '\n' + match[0];
 }
 source += '\nend namespace\n';
+const plexServersFile = await readFile('source/utils/plexServers.bs', 'utf8');
+source += '\n' + plexServersFile.match(/^const PLEX_SERVERS_SECTION = .+$/m)[0] + '\nnamespace plexServers\n';
+for (const name of ['Find', 'HasAddress']) {
+    source += '\n' + plexServersFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
+}
+source += '\nend namespace\n';
 source += '\n' + await readFile('test/plex-tv.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/liveTvGuide.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/live-tv-guide.bs', 'utf8');
