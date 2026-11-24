@@ -8600,7 +8600,7 @@
     </message>
     <message>
         <source>Instant Mix</source>
-        <translation type="unfinished">Mescla instantània</translation>
+        <translation>Mescla instantània</translation>
     </message>
     <message>
         <source>Mark Watched</source>
@@ -9825,6 +9825,22 @@
     <message>
         <source>Hide the badge showing how many episodes are left to watch.</source>
         <translation>Amaga la insígnia que mostra quants episodis queden per veure.</translation>
+    </message>
+    <message>
+        <source>Continue Reading</source>
+        <translation>Continuar llegint</translation>
+    </message>
+    <message>
+        <source>Recently Released Episodes</source>
+        <translation>Episodis publicats recentment</translation>
+    </message>
+    <message>
+        <source>Top Rated Movies</source>
+        <translation>Pel·lícules més valorades</translation>
+    </message>
+    <message>
+        <source>Top Rated TV</source>
+        <translation>Sèries més valorades</translation>
     </message>
 </context>
 </TS>
