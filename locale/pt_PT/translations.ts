@@ -5346,5 +5346,21 @@
         <source>Hide Unwatched Count</source>
         <translation>Ocultar contagem de conteúdo não visto</translation>
     </message>
+    <message>
+        <source>Continue Reading</source>
+        <translation>Continuar a ler</translation>
+    </message>
+    <message>
+        <source>Recently Released Episodes</source>
+        <translation>Episódios lançados recentemente</translation>
+    </message>
+    <message>
+        <source>Top Rated Movies</source>
+        <translation>Filmes com melhor classificação</translation>
+    </message>
+    <message>
+        <source>Top Rated TV</source>
+        <translation>Séries com melhor classificação</translation>
+    </message>
 </context>
 </TS>
