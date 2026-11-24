@@ -9,6 +9,8 @@ import "pkg:/source/utils/siloPlaybackControl.bs"
 const LANE_OPEN_MS = 15000
 const LANE_OWED_MS = 10000
 const LANE_WAIT_MS = 250
+' A lane with no connection looks at its session's record this often, to end once the session has
+const LANE_IDLE_CHECK_MS = 5000
 const LANE_EVENT_OPENED = 1
 const LANE_EVENT_CLOSED = 2
 const LANE_EVENT_ERROR = 3
@@ -47,6 +49,9 @@ sub runLane()
     m.graceAt = -1#
     m.done = false
     m.lastState = ""
+    m.idleCheckAt = 0#
+    m.notBefore = 0#
+    m.retryAfterConnect = false
     setState()
 
     while not m.done
@@ -61,8 +66,20 @@ end sub
 ' ===== The clock: what falls due, checked each pass =====
 
 sub tick(now as double)
-    ' active is heard as an event on the port, in order with the player's answers, so a stop's ack and result that
-    ' came before the let-go are handled first. Reading the field here could jump ahead of them.
+    ' The let-go is also read from the field (its event may have come before the port listened), but only after
+    ' the port is drained, so a stop's ack and result that came before it are handled first
+    if not m.stopping and not m.top.active
+        drainPort()
+        if not m.stopping then beginStop()
+    end if
+    ' With no connection, nothing from Silo says the session ended, so its record is looked at now and then
+    if not m.stopping and m.holder = invalid and m.pending = invalid and now >= m.idleCheckAt
+        m.idleCheckAt = now + LANE_IDLE_CHECK_MS
+        if sessionOver()
+            finish()
+            return
+        end if
+    end if
     if m.stopping
         if m.graceAt >= 0 and now >= m.graceAt then finish()
         return
@@ -98,7 +115,7 @@ function mayConnect() as boolean
     return laneWanted() and m.holder = invalid and m.pending = invalid
 end function
 
-' Whether the lane is still wanted: active, not refused, and the session not over (R13)
+' Whether the lane is still wanted: not let go, not refused, and the session not over (R13)
 function laneWanted() as boolean
     if m.stopping or m.refused or m.done then return false
     return not sessionOver()
@@ -120,6 +137,7 @@ sub connectOnce()
     m.reconnectAt = -1#
     if not mayConnect() then return
     m.connecting = true
+    m.retryAfterConnect = false
     setState()
     print "[silo-control] connect"
 
@@ -138,6 +156,7 @@ sub connectOnce()
         else
             m.off = true
             print "[silo-control] lane is off on this server"
+            retryHeldPulse()
         end if
         return
     end if
@@ -153,6 +172,7 @@ sub connectOnce()
             refuse()
         else if nextStep = "gaveUp"
             m.gaveUp = true
+            retryHeldPulse()
         else
             scheduleReconnect(ticket.retryAfter)
         end if
@@ -287,6 +307,7 @@ sub scheduleReconnect(minSeconds = 0 as dynamic)
     if minSeconds > delay then delay = minSeconds
     m.attempts = m.attempts + 1
     m.reconnectAt = nowMs() + delay * 1000#
+    if minSeconds > 0 then m.notBefore = nowMs() + minSeconds * 1000#
 end sub
 
 ' Backoff for a renewal retry. The holder keeps the lane; past MAX_ATTEMPTS the retries stop (R10).
@@ -314,20 +335,38 @@ sub refuse()
     m.pending = invalid
     if m.holder <> invalid then releaseSocket(m.holder)
     m.holder = invalid
-    setState()
+    ' Nothing will ask for this session again, so the lane is done
+    finish()
 end sub
 
 ' The session's replan pulse (R4): a lane that gave up, or is off, tries again. A refused one stays refused.
 sub onRetry()
-    ' A connect under way (its capability read or ticket) carries on; flagging another would skip its backoff
-    if m.refused or m.connecting or m.pending <> invalid or not laneWanted() then return
+    ' A connect under way (its capability read or ticket) carries on; the pulse is kept for it in case it ends
+    ' off or given up, since flagging another connect now would skip its backoff
+    if m.connecting
+        m.retryAfterConnect = true
+        return
+    end if
+    if m.refused or m.pending <> invalid or not laneWanted() then return
     if m.holder <> invalid and not m.gaveUp and not m.off then return
     print "[silo-control] retry"
     m.attempts = 0
     m.gaveUp = false
     m.off = false
-    m.reconnectAt = -1#
-    m.connectNow = true
+    ' Silo's Retry-After still holds over a replan
+    if nowMs() < m.notBefore
+        m.reconnectAt = m.notBefore
+    else
+        m.reconnectAt = -1#
+        m.connectNow = true
+    end if
+end sub
+
+' A replan's pulse that came while a connect was under way, for a connect that ended off or given up
+sub retryHeldPulse()
+    if not m.retryAfterConnect then return
+    m.retryAfterConnect = false
+    onRetry()
 end sub
 
 ' ===== Ending =====

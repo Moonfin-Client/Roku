@@ -1372,6 +1372,8 @@ sub onPlaybackErrorDialogClosed(msg)
     sourceNode = msg.getRoSGNode()
     sourceNode.unobserveField("buttonSelected")
     sourceNode.unobserveField("wasClosed")
+    ' A reload that failed sent only a reload's stop, which kept the lane
+    letGoControlLane()
 
     m.global.sceneManager.callFunc("popScene")
 end sub
@@ -1461,10 +1463,11 @@ end function
 ' Takes the lane for this session, or keeps the one that holds it. A lane for another session is let go
 ' first. Its late commands still get their answers, since this player keeps hearing them.
 sub syncControlLane()
-    if not controlLaneSupported() or not playsFromSilo() then return
-    if m.controlKey = "" or m.controlSession = "" then return
+    ' Playing again ends a reload, whether or not a lane follows it
     replanned = m.controlReplan = true
     m.controlReplan = false
+    if not controlLaneSupported() or not playsFromSilo() then return
+    if m.controlKey = "" or m.controlSession = "" then return
 
     lane = m.global.siloControlLane
     if isValid(lane) and not isReleasedLane(lane) and playsControlSession(siloPlaybackControl.ServerKey(lane.server), lane.sessionId)
@@ -1504,8 +1507,9 @@ function isReleasedLane(lane as object) as boolean
     return isValid(m.releasedLane) and m.releasedLane.isSameNode(lane)
 end function
 
-' Lets go of this session's lane once the session is over (a stop that is really sent, or an ended
-' session). The lane closes after its grace, and a command still running gets its answer first.
+' Lets go of this session's lane once the player leaves it: a stop report that isn't a reload's, Back or a
+' remote stop, Next, an ended session, or the error dialog closing. The lane closes after its grace, and a
+' command still running gets its answer first.
 sub letGoControlLane()
     if not m.global.hasField("siloControlLane") then return
     lane = m.global.siloControlLane
@@ -1654,6 +1658,7 @@ sub retryPlaybackFromServer(startSeconds = -1 as float)
         m.global.queueManager.callFunc("setTopStartingPoint", Int(startSeconds * 1000) * 10000&)
     end if
 
+    m.controlReplan = true
     m.top.control = VideoControl.STOP
 
     m.LoadMetaDataTask.selectedSubtitleIndex = m.top.SelectedSubtitle
@@ -1881,9 +1886,14 @@ sub onVideoContentLoaded(event as object)
     ' The session and server the control lane follows. Only a stream handed over with a session changes
     ' them, so a load without one keeps the one it had
     handedSession = toString(m.top.PlaySessionId ?? "")
+    handedKey = controlLaneKey()
     if handedSession <> ""
         m.controlSession = handedSession.Split("~")[0]
-        m.controlKey = controlLaneKey()
+        m.controlKey = handedKey
+    else if handedKey <> m.controlKey or not playsFromSilo()
+        ' Another server's stream, or one that isn't Silo's, isn't the lane's session any more
+        m.controlSession = ""
+        m.controlKey = handedKey
     end if
     m.top.videoId = videoContent[0].id
     m.top.container = videoContent[0].container
@@ -3040,6 +3050,10 @@ end function
 sub ReportPlayback(state = "update" as string)
 
     if m.top.position = invalid then return
+
+    ' A stop ends this session's control lane, unless it's a reload's (track, bitrate, seek, retry), which keeps
+    ' the session and is marked before its stop lands
+    if state = "stop" and not m.controlReplan then letGoControlLane()
 
     params = playbackReportParams()
     if isValid(m.top.content) and isValid(m.top.content.live) and m.top.content.live
@@ -4622,6 +4636,8 @@ sub stopForReload()
         m.replacedLiveSession = m.liveSession
         m.liveSession = invalid
     end if
+    ' The stop report this sends belongs to a reload, which keeps the control lane
+    m.controlReplan = true
     m.top.control = VideoControl.STOP
 
     ' The stop never reaches the recovery, so the stream it watched would still look like one that
