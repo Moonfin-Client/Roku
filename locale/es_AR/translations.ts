@@ -9533,5 +9533,21 @@
         <source>Syncing playback to {0}</source>
         <translation>Sincronizando reproducción con {0}</translation>
     </message>
+    <message>
+        <source>Continue Reading</source>
+        <translation>Seguir leyendo</translation>
+    </message>
+    <message>
+        <source>Recently Released Episodes</source>
+        <translation>Episodios estrenados recientemente</translation>
+    </message>
+    <message>
+        <source>Top Rated Movies</source>
+        <translation>Películas mejor puntuadas</translation>
+    </message>
+    <message>
+        <source>Top Rated TV</source>
+        <translation>Series mejor puntuadas</translation>
+    </message>
 </context>
 </TS>
