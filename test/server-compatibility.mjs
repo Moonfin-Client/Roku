@@ -551,6 +551,9 @@ assert.ok(scannedRoutes > 100, 'The route scan found the app sources');
 // The device lowercases a bare key in a literal, which the player API turns away, and brs-node doesnt.
 const youtubeSource = await readFile('source/utils/youtubeTrailer.bs', 'utf8');
 assert.ok(['"videoId":', '"clientName":', '"clientVersion":', '"contentCheckOk":', '"racyCheckOk":', '["visitorData"]'].every(key => youtubeSource.includes(key)), 'The YouTube request keeps its camelCase keys');
+const controlFrames = await readFile('source/utils/siloPlaybackControl.bs', 'utf8');
+assert.ok(['{ "type": "hello", "session_id":', '"client": { "name":', '"capabilities": { "commands":', '{ "type": "ack", "command_id":', '{ "type": "result", "command_id":'].every(key => controlFrames.includes(key)), 'Silo control frames quote their keys, since a bare key reaches Silo lowercased on the device');
+assert.match(await readFile('source/api/silo/SiloPlaybackControl.bs', 'utf8'), /return \{ "installation_id": installationId \}/, 'The control ticket body quotes its key');
 
 const seerrTask = await readFile('components/seerr/SeerrAPITask.bs', 'utf8');
 assert.match(seerrTask, /url = buildServerURL\(serverUrl, targetPath, queryParams\)/, 'Plugin proxy preserves saved server query through shared compositor');
