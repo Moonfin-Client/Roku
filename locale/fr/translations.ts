@@ -8549,5 +8549,21 @@
         <source>Hide the badge showing how many episodes are left to watch.</source>
         <translation>Masque le compteur indiquant combien d&apos;épisodes restent à voir.</translation>
     </message>
+    <message>
+        <source>Continue Reading</source>
+        <translation>Continuer la lecture</translation>
+    </message>
+    <message>
+        <source>Recently Released Episodes</source>
+        <translation>Épisodes récemment sortis</translation>
+    </message>
+    <message>
+        <source>Top Rated Movies</source>
+        <translation>Films les mieux notés</translation>
+    </message>
+    <message>
+        <source>Top Rated TV</source>
+        <translation>Séries les mieux notées</translation>
+    </message>
 </context>
 </TS>
