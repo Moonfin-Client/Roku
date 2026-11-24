@@ -2686,5 +2686,13 @@
         <source>Dim video and show overview text while paused</source>
         <translation>تعتيم الفيديو وإظهار نص النظرة العامة أثناء الإيقاف المؤقت</translation>
     </message>
+    <message>
+        <source>Continue Reading</source>
+        <translation>مواصلة القراءة</translation>
+    </message>
+    <message>
+        <source>Recently Released Episodes</source>
+        <translation>الحلقات التي تم إصدارها مؤخرًا</translation>
+    </message>
 </context>
 </TS>
