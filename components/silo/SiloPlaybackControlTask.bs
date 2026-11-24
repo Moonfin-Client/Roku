@@ -9,7 +9,6 @@ import "pkg:/source/utils/siloPlaybackControl.bs"
 const LANE_OPEN_MS = 15000
 const LANE_OWED_MS = 10000
 const LANE_WAIT_MS = 250
-const LANE_OVER_CHECK_MS = 2000
 const LANE_EVENT_OPENED = 1
 const LANE_EVENT_CLOSED = 2
 const LANE_EVENT_ERROR = 3
@@ -30,8 +29,7 @@ sub runLane()
     m.pending = invalid
     ' Closes this Task asked for, by socket id, which the server's closed event still owes
     m.owed = {}
-    ' Command ids that were acked and not yet resulted, and the socket each command came on
-    m.running = {}
+    ' The socket each command came on, by id, until its result: commands handed to the player and not yet answered
     m.cmdFrom = {}
     m.attempts = 0
     m.everOpened = false
@@ -47,8 +45,8 @@ sub runLane()
     m.renewRetryAt = -1#
     m.stableAt = -1#
     m.graceAt = -1#
-    m.overCheckAt = 0#
     m.done = false
+    m.lastState = ""
     setState()
 
     while not m.done
@@ -63,16 +61,8 @@ end sub
 ' ===== The clock: what falls due, checked each pass =====
 
 sub tick(now as double)
-    if not m.stopping
-        ' A session that ended (its playback record says so) is let go like one the player stopped. The record
-        ' is a global, and each read waits on the render thread, so it's looked at every couple of seconds
-        if not m.top.active
-            beginStop()
-        else if now >= m.overCheckAt
-            m.overCheckAt = now + LANE_OVER_CHECK_MS
-            if sessionOver() then beginStop()
-        end if
-    end if
+    ' active is heard as an event on the port, in order with the player's answers, so a stop's ack and result that
+    ' came before the let-go are handled first. Reading the field here could jump ahead of them.
     if m.stopping
         if m.graceAt >= 0 and now >= m.graceAt then finish()
         return
@@ -110,7 +100,7 @@ end function
 
 ' Whether the lane is still wanted: active, not refused, and the session not over (R13)
 function laneWanted() as boolean
-    if not m.top.active or m.stopping or m.refused or m.done then return false
+    if m.stopping or m.refused or m.done then return false
     return not sessionOver()
 end function
 
@@ -139,10 +129,11 @@ sub connectOnce()
         m.connecting = false
         return
     end if
-    if not available
+    if available <> "yes"
         m.connecting = false
-        ' A lane that was up and now says unavailable is a server restarting, so it's asked again (R12)
-        if m.everOpened
+        ' A failed read is asked again, and so is a lane that was up and now hears unavailable: a server
+        ' restarting (R12). Only a lane that never opened takes "no" as off.
+        if available = "error" or m.everOpened
             scheduleReconnect()
         else
             m.off = true
@@ -163,7 +154,7 @@ sub connectOnce()
         else if nextStep = "gaveUp"
             m.gaveUp = true
         else
-            scheduleReconnect()
+            scheduleReconnect(ticket.retryAfter)
         end if
         return
     end if
@@ -196,9 +187,9 @@ sub attemptRenew()
             m.renewOnClose = true
             if m.holder = invalid then m.connectNow = true
         else if m.holder <> invalid
-            renewRetryAfter()
+            renewRetryAfter(ticket.retryAfter)
         else
-            scheduleReconnect()
+            scheduleReconnect(ticket.retryAfter)
         end if
         return
     end if
@@ -282,7 +273,8 @@ sub failedConnect(renewing as boolean)
 end sub
 
 ' Backoff for a reconnect. After MAX_ATTEMPTS it gives up until a retry pulse or a replan (R4, R10).
-sub scheduleReconnect()
+' [minSeconds] is Silo's Retry-After, which it asks clients never to undercut
+sub scheduleReconnect(minSeconds = 0 as dynamic)
     if not laneWanted() then return
     if m.reconnectAt >= 0 then return
     if m.attempts >= siloPlaybackControl.MAX_ATTEMPTS
@@ -292,15 +284,17 @@ sub scheduleReconnect()
         return
     end if
     delay = siloPlaybackControl.BackoffSeconds(m.attempts, Rnd(0))
+    if minSeconds > delay then delay = minSeconds
     m.attempts = m.attempts + 1
     m.reconnectAt = nowMs() + delay * 1000#
 end sub
 
 ' Backoff for a renewal retry. The holder keeps the lane; past MAX_ATTEMPTS the retries stop (R10).
-sub renewRetryAfter()
+sub renewRetryAfter(minSeconds = 0 as dynamic)
     if not laneWanted() then return
     if m.attempts >= siloPlaybackControl.MAX_ATTEMPTS then return
     delay = siloPlaybackControl.BackoffSeconds(m.attempts, Rnd(0))
+    if minSeconds > delay then delay = minSeconds
     m.attempts = m.attempts + 1
     m.renewRetryAt = nowMs() + delay * 1000#
 end sub
@@ -325,7 +319,8 @@ end sub
 
 ' The session's replan pulse (R4): a lane that gave up, or is off, tries again. A refused one stays refused.
 sub onRetry()
-    if m.refused or m.pending <> invalid or not laneWanted() then return
+    ' A connect under way (its capability read or ticket) carries on; flagging another would skip its backoff
+    if m.refused or m.connecting or m.pending <> invalid or not laneWanted() then return
     if m.holder <> invalid and not m.gaveUp and not m.off then return
     print "[silo-control] retry"
     m.attempts = 0
@@ -351,7 +346,8 @@ sub beginStop()
         m.pending = invalid
     end if
     print "[silo-control] let go"
-    if m.running.Count() = 0
+    ' Commands handed to the player and not yet answered get the grace, acked or not
+    if m.cmdFrom.Count() = 0
         finish()
     else
         m.graceAt = nowMs() + siloPlaybackControl.GRACE_SECONDS * 1000#
@@ -367,7 +363,6 @@ sub finish()
     if m.holder <> invalid then releaseSocket(m.holder)
     m.holder = invalid
     m.cmdFrom = {}
-    m.running = {}
     m.done = true
     print "[silo-control] closed"
     setState()
@@ -380,7 +375,12 @@ sub onHolderGone()
     m.renewRetryAt = -1#
     m.stableAt = -1#
     if m.stopping
-        if m.running.Count() = 0 then finish()
+        if m.cmdFrom.Count() = 0 then finish()
+        return
+    end if
+    ' Silo closes the lane of a session that is over, and a refused lane never asks again: either way it's done
+    if m.refused or sessionOver()
+        finish()
         return
     end if
     if not laneWanted() then return
@@ -496,20 +496,17 @@ sub onText(text as string)
     m.top.command = { id: cmd.id, name: cmd.name, payload: cmd.payload, reason: cmd.reason, sessionId: m.top.sessionId }
 end sub
 
-' The player's answer: an ack marks the command running, a result ends it. Answers go on the holder, else on the
-' connection the command came on.
+' The player's answer, sent on the holder, else on the connection the command came on. A result ends the command.
 sub onAnswer(answer as dynamic)
     if type(answer) <> "roAssociativeArray" then return
     id = toString(answer.id)
     if id = "" then return
     if answer.type = "ack"
-        m.running[id] = true
         sendAnswer(id, siloPlaybackControl.Ack(m.top.sessionId, id), "ack")
     else if answer.type = "result"
-        if m.running.DoesExist(id) then m.running.Delete(id)
         sendAnswer(id, siloPlaybackControl.Result(m.top.sessionId, id, answer.error), "result")
         if m.cmdFrom.DoesExist(id) then m.cmdFrom.Delete(id)
-        if m.stopping and m.running.Count() = 0 then finish()
+        if m.stopping and m.cmdFrom.Count() = 0 then finish()
     end if
 end sub
 
@@ -549,5 +546,8 @@ sub setState()
     else if m.pending <> invalid or m.connecting
         s = "connecting"
     end if
-    if m.top.state <> s then m.top.state = s
+    if m.lastState <> s
+        m.lastState = s
+        m.top.state = s
+    end if
 end sub

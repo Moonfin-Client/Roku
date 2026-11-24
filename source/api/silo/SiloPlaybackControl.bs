@@ -9,12 +9,16 @@ import "pkg:/source/utils/siloPlaybackControl.bs"
 namespace silo
     const PLAYBACK_CONTROL_BASE = "/api/v2/playback/sessions"
 
-    ' The capability answer's usable part, or invalid. A capability read is cached per server, since
-    ' a session asks again for every replan and every reconnect.
-    function PlaybackControlAvailable(server as string, account as string, profileId as string) as boolean
+    ' Whether this server lets the lane open: "yes", "no", or "error" for a read that failed (no answer, a
+    ' 5xx), which the lane retries with backoff instead of treating as off. Cached per server, since a session
+    ' asks again for every replan and every reconnect.
+    function PlaybackControlAvailable(server as string, account as string, profileId as string) as string
         key = siloPlaybackControl.ServerKey(server)
         cached = silo.PlaybackControlCached(key)
-        if cached <> invalid then return cached.available
+        if cached <> invalid
+            if cached.available then return "yes"
+            return "no"
+        end if
 
         answer = silo.Call(server, silo.PLAYBACK_CONTROL_BASE + "/control/capabilities", { account: account, profileId: profileId })
         usable = false
@@ -24,7 +28,9 @@ namespace silo
         if siloPlaybackControl.CapsKeep(answer.status, usable)
             silo.KeepPlaybackControl(key, usable)
         end if
-        return usable
+        if usable then return "yes"
+        if answer.status = 0 or answer.status >= 500 then return "error"
+        return "no"
     end function
 
     ' The answer from the capability cache, or invalid. Ten minutes, as the lane's rules say.
@@ -69,9 +75,11 @@ namespace silo
     ' socket speaks; a refusal says how to treat a failed one. A 200 without a ticket, or with another
     ' protocol, is a server the lane should ask again later, not one that refused.
     function PlaybackControlTicketOf(answer as object) as object
-        result = { ok: false, ticket: "", maxConnectionSeconds: 0, refusal: "" }
+        result = { ok: false, ticket: "", maxConnectionSeconds: 0, refusal: "", retryAfter: 0 }
         if answer.ok <> true
             result.refusal = siloPlaybackControl.TicketRefusal(answer.status)
+            ' Silo asks never to be asked again sooner than its Retry-After (seconds)
+            if isValidAndNotEmpty(answer.retryAfter) then result.retryAfter = Val(toString(answer.retryAfter))
             return result
         end if
         data = answer.data

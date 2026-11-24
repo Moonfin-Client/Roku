@@ -433,6 +433,7 @@ sub playQueueItem(move as string)
     end if
     m.top.unobserveField("state")
     m.top.control = VideoControl.STOP
+    letGoControlLane()
     m.global.sceneManager.callFunc("clearPreviousScene")
     m.global.queueManager.callFunc(move)
     m.global.queueManager.callFunc("playQueue")
@@ -442,6 +443,7 @@ end sub
 sub leaveForGroupItem()
     m.top.unobserveField("state")
     m.top.control = VideoControl.STOP
+    letGoControlLane()
     m.global.sceneManager.callFunc("clearPreviousScene")
 end sub
 
@@ -1464,7 +1466,6 @@ sub syncControlLane()
     replanned = m.controlReplan = true
     m.controlReplan = false
 
-    if not m.global.hasField("siloControlLane") then m.global.addFields({ siloControlLane: invalid })
     lane = m.global.siloControlLane
     if isValid(lane) and not isReleasedLane(lane) and playsControlSession(siloPlaybackControl.ServerKey(lane.server), lane.sessionId)
         ' A replan keeps the lane, and its retry asks again if the lane gave up on the session
@@ -1527,8 +1528,9 @@ sub onLaneCommand(msg as object)
     lane = msg.getRoSGNode()
     cmd = msg.getData()
     if not isValid(cmd) then return
-    ' A lane let go, or a player that is closing, runs nothing. It still answers, as not running.
-    if m.endedOnServer or isReleasedLane(lane) or not playsControlSession(siloPlaybackControl.ServerKey(lane.server), cmd.sessionId)
+    ' A lane let go, a player that is closing, or one Next has put another player over, runs nothing: a stop
+    ' would close the screen on top. It still answers, as not running.
+    if m.endedOnServer or isReleasedLane(lane) or not isOnScreen() or not playsControlSession(siloPlaybackControl.ServerKey(lane.server), cmd.sessionId)
         lane.answer = { id: cmd.id, type: "result", error: "not_playing" }
         return
     end if
@@ -1596,10 +1598,18 @@ end function
 ' Silo has ended the session, so the player stops at once and says why. The record is marked first, so the
 ' stop and any reload treat it as ended.
 sub endOnServerCommand(reason as string)
+    ' Marking the record sets the global this player observes, whose handler would close without the reason
+    m.global.unobserveFieldScoped("siloPlaybackEnded")
     record = silo.PlaybackSessions()[m.controlSession]
     if isValid(record) and record.endedByServer <> true then silo.MarkEndedByServer(record)
     closeEndedOnServer("", reason)
 end sub
+
+' Whether this player is the screen on top, the one a remote stop closes
+function isOnScreen() as boolean
+    active = m.global.sceneManager.callFunc("getActiveScene")
+    return isValid(active) and active.isSameNode(m.top)
+end function
 
 sub onPlaybackErrorButtonSelected(msg)
     sourceNode = msg.getRoSGNode()
@@ -1657,7 +1667,7 @@ end sub
 ' and a fresh task carries this one.
 sub runLoad()
     if m.endedOnServer then return
-    ' Every load after the first is a replan or a reload; the next playing state says whether the lane holds
+    ' A load is a replan or a reload once the lane exists; the next playing state says whether the lane holds
     m.controlReplan = true
     if m.loadInFlight then replaceLoadTask()
     m.loadInFlight = true
@@ -1868,10 +1878,13 @@ sub onVideoContentLoaded(event as object)
 
     m.top.content = videoContent[0].content
     m.top.PlaySessionId = videoContent[0].PlaySessionId
-    ' The session and server the control lane follows. Only a stream handed over changes them, so a
-    ' replan that blanks PlaySessionId for a moment keeps the one it had
-    m.controlSession = (m.top.PlaySessionId ?? "").Split("~")[0]
-    m.controlKey = controlLaneKey()
+    ' The session and server the control lane follows. Only a stream handed over with a session changes
+    ' them, so a load without one keeps the one it had
+    handedSession = toString(m.top.PlaySessionId ?? "")
+    if handedSession <> ""
+        m.controlSession = handedSession.Split("~")[0]
+        m.controlKey = controlLaneKey()
+    end if
     m.top.videoId = videoContent[0].id
     m.top.container = videoContent[0].container
     m.top.mediaSourceId = videoContent[0].mediaSourceId
@@ -3027,9 +3040,6 @@ end function
 sub ReportPlayback(state = "update" as string)
 
     if m.top.position = invalid then return
-
-    ' A stop that is really sent ends this session, so its control lane goes too
-    if state = "stop" then letGoControlLane()
 
     params = playbackReportParams()
     if isValid(m.top.content) and isValid(m.top.content.live) and m.top.content.live
