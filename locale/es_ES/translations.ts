@@ -6852,5 +6852,61 @@
         <source>Start from the beginning</source>
         <translation>Empezar desde el principio</translation>
     </message>
+    <message>
+        <source>Video Library Style</source>
+        <translation>Estilo de Biblioteca de Vídeo</translation>
+    </message>
+    <message>
+        <source>Video dynamic range (e.g. Dolby Vision / HDR) is not supported by this display.</source>
+        <translation>Este monitor no es compatible con el rango dinámico de vídeo (por ejemplo, Dolby Vision/HDR).</translation>
+    </message>
+    <message>
+        <source>Video reference frames exceed player limits.</source>
+        <translation>Los fotogramas de referencia del vídeo superan los límites del reproductor.</translation>
+    </message>
+    <message>
+        <source>Valentine&apos;s Day</source>
+        <translation>Día de San Valentín</translation>
+    </message>
+    <message>
+        <source>Unlock notifications</source>
+        <translation>Desbloquear notificaciones</translation>
+    </message>
+    <message>
+        <source>Unblock</source>
+        <translation>Desbloquear</translation>
+    </message>
+    <message>
+        <source>Choose what the Radarr and Sonarr rows show.</source>
+        <translation>Elige qué muestran las filas de Radarr y Sonarr.</translation>
+    </message>
+    <message>
+        <source>Turn metadata items on or off, and arrange the order they appear on the details screen.</source>
+        <translation>Active o desactive los elementos de metadatos y configure el orden en que aparecen en la pantalla de detalles.</translation>
+    </message>
+    <message>
+        <source>Turn rows on or off and change their order</source>
+        <translation>Activar o desactivar filas y cambiar su orden</translation>
+    </message>
+    <message>
+        <source>Use Series Thumbnails</source>
+        <translation>Usar miniaturas de la serie</translation>
+    </message>
+    <message>
+        <source>{count} playlists</source>
+        <translation>{count} listas de reproduccion</translation>
+    </message>
+    <message>
+        <source>Watch Parties are turned off on this server.</source>
+        <translation>Las sesiones de visionado en grupo están desactivadas en este servidor.</translation>
+    </message>
+    <message>
+        <source>Continue Reading</source>
+        <translation>Continuar leyendo</translation>
+    </message>
+    <message>
+        <source>Recently Released Episodes</source>
+        <translation>Episodios lanzados recientemente</translation>
+    </message>
 </context>
 </TS>
