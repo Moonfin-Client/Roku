@@ -479,9 +479,87 @@ namespace silo
         me = 0
         if account.id <> invalid then me = account.id.ToStr().ToInt()
         m.siloSeerrMe = me
+        mine = { mineAt: silo.NowSeconds() }
+        if me > 0 and isValidAndNotEmpty(account.username) then mine["n_" + me.ToStr()] = account.username.ToStr()
+        silo.RequesterKeep(silo.RequesterNamesOf(r), mine)
         permissions = 32 + 262144 + 524288
         if manage then permissions = permissions + 16
         return { id: me, displayName: account.username, permissions: permissions }
+    end function
+
+    ' The account names a profile's requests are shown with, by account id, and when they were last
+    ' read. Each Seerr screen and row reads on a task of its own, so they're kept on a node of the
+    ' global node, a field each under a prefix for the server and profile
+    function RequesterNamesOf(r as object) as dynamic
+        if m.global = invalid then return invalid
+        store = m.global.siloSeerrRequesters
+        if store = invalid then return invalid
+        return { store: store, prefix: "r" + silo.StableId(r.server + "|" + r.profileId).ToStr() + "_" }
+    end function
+
+    sub RequesterKeep(kept as dynamic, fields as object)
+        if kept = invalid then return
+        prefixed = {}
+        for each name in fields
+            prefixed[kept.prefix + name] = fields[name]
+        end for
+        kept.store.update(prefixed, true)
+    end sub
+
+    function RequesterReadDue(at as dynamic) as boolean
+        return at = invalid or silo.NowSeconds() - at > 60
+    end function
+
+    ' Silo's requests name their requester by account id only. The viewer's own name comes from
+    ' /account/me, and an admin, who sees everyone's, reads the account names when one isn't known
+    ' yet, each at most once a minute. The names are read all at once, since each read of the node
+    ' from a task waits on the render thread
+    sub AddRequesterNames(r as object, requests as object)
+        kept = silo.RequesterNamesOf(r)
+        if kept = invalid then return
+        known = kept.store.getFields()
+        if silo.FillRequesterNames(kept.prefix, known, requests) and silo.RequesterReadDue(known[kept.prefix + "mineAt"])
+            silo.SeerrCurrentUser(r)
+            known = kept.store.getFields()
+        end if
+        if silo.FillRequesterNames(kept.prefix, known, requests) and silo.RequesterReadDue(known[kept.prefix + "readAt"]) and silo.SeerrIsAdmin(r)
+            names = {}
+            cursor = ""
+            guard = 0
+            while guard < 40
+                guard++
+                query = { limit: 100 }
+                if cursor <> "" then query.cursor = cursor
+                body = silo.SeerrGet(r, "/admin/users", query)
+                for each user in silo.SeerrList(body.items)
+                    ' Silo's ids are strings
+                    if type(user) = "roAssociativeArray" and user.id <> invalid and isValidAndNotEmpty(user.username) then names["n_" + user.id.ToStr().ToInt().ToStr()] = user.username.ToStr()
+                end for
+                cursor = ""
+                if type(body.page) = "roAssociativeArray" and isValidAndNotEmpty(body.page.next_cursor) then cursor = body.page.next_cursor
+                if cursor = "" then exit while
+            end while
+            ' Kept with the names, so another task reading at the same time doesn't skip its own read
+            names.readAt = silo.NowSeconds()
+            silo.RequesterKeep(kept, names)
+            silo.FillRequesterNames(kept.prefix, kept.store.getFields(), requests)
+        end if
+    end sub
+
+    ' Puts the known names on the requests, and whether any requester is still unknown
+    function FillRequesterNames(prefix as string, known as object, requests as object) as boolean
+        unknown = false
+        for each req in requests
+            if type(req.requestedBy) = "roAssociativeArray" and req.requestedBy.id <> invalid
+                name = known[prefix + "n_" + req.requestedBy.id.ToStr()]
+                if name = invalid
+                    unknown = true
+                else
+                    req.requestedBy.displayName = name
+                end if
+            end if
+        end for
+        return unknown
     end function
 
     function SeerrStatus(r as object) as object
@@ -542,6 +620,7 @@ namespace silo
             found = silo.ReadSeerrRequests(r, "/admin/requests", query, skip + take, filter)
         end if
         results = silo.Slice(found.requests, skip, take).Items
+        silo.AddRequesterNames(r, results)
         known = found.requests.Count()
         if found.more then known++
         pages = 1
@@ -630,7 +709,9 @@ namespace silo
             ' Seerr deletes a request; Silo cancels it, which keeps its history
             if verb = "DELETE" then return silo.SeerrPost(r, "/api/v2/requests/" + requestPath + "/cancel")
             if third = "approve" or third = "decline" or third = "retry" then return silo.SeerrPost(r, "/api/v2/admin/requests/" + requestPath + "/" + third)
-            return silo.Ok(silo.MapSeerrRequest(silo.SeerrGet(r, "/requests/" + requestPath)))
+            one = silo.MapSeerrRequest(silo.SeerrGet(r, "/requests/" + requestPath))
+            silo.AddRequesterNames(r, [one])
+            return silo.Ok(one)
         end if
         if first = "watchlist"
             if verb = "POST" and type(r.body) = "roAssociativeArray"
