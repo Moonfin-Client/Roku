@@ -1,0 +1,99 @@
+' A fake answer for silo.Call's prefetch seam, which a GET takes in place of the transfer
+function playbackControlEvent(status as integer, body as string) as object
+    return {
+        status: status, text: body,
+        GetResponseCode: function() as integer
+            return m.status
+        end function,
+        GetString: function() as string
+            return m.text
+        end function,
+        GetResponseHeaders: function() as object
+            return {}
+        end function
+    }
+end function
+
+' A prefetch stand-in that answers the next GET with the given event
+function playbackControlPrefetch(event as object) as object
+    return {
+        event: event,
+        NoteSilo: sub(url as string, headers as object, account as string, profileId as string, useProfile as boolean, sent as object)
+        end sub,
+        TakeSilo: function(url as string, headers as object, wait as integer) as dynamic
+            return m.event
+        end function
+    }
+end function
+
+sub testSiloPlaybackControlApi()
+    protocol = "silo.playback-control.v2"
+    m.global.siloPlaybackControlCaps = {}
+    m.global.hasField = function(name as string) as boolean
+        return m.DoesExist(name)
+    end function
+
+    ' Capabilities: a 404 is an older server, kept as not available
+    server = "http://control-old.test:8090"
+    key = siloPlaybackControl.ServerKey(server)
+    m.startupPrefetch = playbackControlPrefetch(playbackControlEvent(404, FormatJson({ type: "https://siloserver.org/docs/api/v2/problems/not_found", title: "Not found", status: 404 })))
+    assertEqual(silo.PlaybackControlAvailable(server, "", ""), false, "An older server has no playback control")
+    assertEqual(m.global.siloPlaybackControlCaps[key].available, false, "A 404 is kept in the cache")
+    m.startupPrefetch = playbackControlPrefetch(playbackControlEvent(200, FormatJson({ available: true, protocol: protocol, allowed: true })))
+    assertEqual(silo.PlaybackControlAvailable(server, "", ""), false, "A kept 404 answers from the cache, not the server")
+
+    ' allowed false is per login, so it is asked again
+    server = "http://control-login.test:8090"
+    key = siloPlaybackControl.ServerKey(server)
+    m.startupPrefetch = playbackControlPrefetch(playbackControlEvent(200, FormatJson({ available: true, protocol: protocol, allowed: false })))
+    assertEqual(silo.PlaybackControlAvailable(server, "", ""), false, "allowed false isn't available")
+    assertEqual(m.global.siloPlaybackControlCaps.DoesExist(key), false, "allowed false isn't kept in the cache")
+
+    ' A usable answer is available and kept
+    server = "http://control-ok.test:8090"
+    key = siloPlaybackControl.ServerKey(server)
+    m.startupPrefetch = playbackControlPrefetch(playbackControlEvent(200, FormatJson({ available: true, protocol: protocol, allowed: true })))
+    assertEqual(silo.PlaybackControlAvailable(server, "", ""), true, "A usable answer makes the control available")
+    assertEqual(m.global.siloPlaybackControlCaps[key].available, true, "A usable answer is kept in the cache")
+    m.startupPrefetch = playbackControlPrefetch(playbackControlEvent(503, FormatJson({ type: "https://siloserver.org/docs/api/v2/problems/unavailable", title: "Unavailable", status: 503 })))
+    assertEqual(silo.PlaybackControlAvailable(server, "", ""), true, "A kept usable answer is used for the next lookup")
+
+    ' A cached answer goes stale after ten minutes
+    staleAt = silo.NowSeconds() - siloPlaybackControl.CAPS_TTL_SECONDS - 1
+    m.global.siloPlaybackControlCaps[key] = { available: true, at: staleAt }
+    assertEqual(silo.PlaybackControlAvailable(server, "", ""), false, "A stale cached answer is read again, and the 503 says not available")
+    assertEqual(m.global.siloPlaybackControlCaps[key].at, staleAt, "and a failed read doesn't replace the cache")
+
+    ' Signing out of a server clears its cache only
+    other = "http://control-other.test:8090"
+    m.global.siloPlaybackControlCaps[siloPlaybackControl.ServerKey(other)] = { available: true, at: silo.NowSeconds() }
+    m.global.siloPlaybackControlCaps[key] = { available: true, at: silo.NowSeconds() }
+    silo.ForgetPlaybackControlCaps(server)
+    assertEqual(m.global.siloPlaybackControlCaps.DoesExist(key), false, "Signing out clears that server's capabilities")
+    assertEqual(m.global.siloPlaybackControlCaps.DoesExist(siloPlaybackControl.ServerKey(other)), true, "and leaves other servers' capabilities")
+
+    ' The ticket request carries the session's installation, not the device's
+    body = silo.PlaybackControlTicketBody("install-7")
+    assertEqual(body.installation_id, "install-7", "The ticket request names the session's installation")
+    assertEqual(FormatJson(body), "{" + Chr(34) + "installation_id" + Chr(34) + ":" + Chr(34) + "install-7" + Chr(34) + "}", "and sends nothing else")
+
+    ' Ticket answers
+    ticket = silo.PlaybackControlTicketOf({ ok: true, status: 200, data: { ticket: "t-1", protocol: protocol, expires_in: 30, max_connection_seconds: 14400 } })
+    assertEqual(ticket.ok, true, "A ticket with the protocol is usable")
+    assertEqual(ticket.ticket, "t-1", "The ticket is read from the answer")
+    assertEqual(ticket.maxConnectionSeconds, 14400, "The connection limit is read from the answer")
+    assertEqual(silo.PlaybackControlTicketOf({ ok: true, status: 200, data: { protocol: "silo.room.v2", ticket: "t-2", max_connection_seconds: 14400 } }).refusal, "retry", "A ticket for another protocol is retried")
+    assertEqual(silo.PlaybackControlTicketOf({ ok: true, status: 200, data: { protocol: protocol, max_connection_seconds: 14400 } }).refusal, "retry", "A missing ticket is retried")
+    assertEqual(silo.PlaybackControlTicketOf({ ok: true, status: 200, data: { protocol: protocol, ticket: "t-3" } }).refusal, "retry", "A ticket without a connection limit is retried")
+    assertEqual(silo.PlaybackControlTicketOf({ ok: false, status: 409, data: invalid }).refusal, "final", "A 409 ends the session for this lane")
+    assertEqual(silo.PlaybackControlTicketOf({ ok: false, status: 410, data: invalid }).refusal, "final", "A 410 is final too")
+    assertEqual(silo.PlaybackControlTicketOf({ ok: false, status: 401, data: invalid }).refusal, "token", "A 401 is the token, tried again later")
+    assertEqual(silo.PlaybackControlTicketOf({ ok: false, status: 403, data: invalid }).refusal, "token", "A 403 is the token too")
+    assertEqual(silo.PlaybackControlTicketOf({ ok: false, status: 503, data: invalid }).refusal, "retry", "A 503 is retried with backoff")
+    assertEqual(silo.PlaybackControlTicketOf({ ok: false, status: 0, data: invalid }).refusal, "retry", "No answer is retried")
+    assertEqual(silo.PlaybackControlTicketOf({ ok: false, status: 503, data: invalid }).ok, false, "A refused ticket isn't usable")
+
+    m.startupPrefetch = invalid
+    m.global.Delete("siloPlaybackControlCaps")
+    m.global.Delete("hasField")
+end sub

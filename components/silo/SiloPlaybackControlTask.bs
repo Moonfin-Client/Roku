@@ -1,0 +1,553 @@
+import "pkg:/source/api/silo/SiloPlaybackControl.bs"
+import "pkg:/source/api/silo/SiloPlayback.bs"
+import "pkg:/source/utils/siloPlaybackControl.bs"
+
+' The lane: Silo's playback control socket for one playing session (utils/siloPlaybackControl.bs holds the rules).
+' One node is one lane, and one lane is one session (R16), so a command and its answer are tied to the node they
+' came on. Up to two sockets exist at once: the holder, which owns the lane, and a pending one being opened (a
+' connect or a renewal). Nothing here logs the ticket, the protocols string or a token.
+const LANE_OPEN_MS = 15000
+const LANE_OWED_MS = 10000
+const LANE_WAIT_MS = 250
+const LANE_OVER_CHECK_MS = 2000
+const LANE_EVENT_OPENED = 1
+const LANE_EVENT_CLOSED = 2
+const LANE_EVENT_ERROR = 3
+const LANE_EVENT_TEXT = 5
+
+sub init()
+    m.top.functionName = "runLane"
+end sub
+
+sub runLane()
+    m.port = CreateObject("roMessagePort")
+    m.top.observeField("active", m.port)
+    m.top.observeField("retry", m.port)
+    m.top.observeField("answer", m.port)
+    m.clock = CreateObject("roTimespan")
+    ' { ws, id } for the connection holding the lane, and { ws, id, deadline, renewing, maxSeconds } for one being opened
+    m.holder = invalid
+    m.pending = invalid
+    ' Closes this Task asked for, by socket id, which the server's closed event still owes
+    m.owed = {}
+    ' Command ids that were acked and not yet resulted, and the socket each command came on
+    m.running = {}
+    m.cmdFrom = {}
+    m.attempts = 0
+    m.everOpened = false
+    m.gaveUp = false
+    m.off = false
+    m.refused = false
+    m.stopping = false
+    m.connecting = false
+    m.renewOnClose = false
+    m.connectNow = m.top.active
+    m.reconnectAt = -1#
+    m.renewAt = -1#
+    m.renewRetryAt = -1#
+    m.stableAt = -1#
+    m.graceAt = -1#
+    m.overCheckAt = 0#
+    m.done = false
+    setState()
+
+    while not m.done
+        tick(nowMs())
+        if m.done then exit while
+        msg = wait(LANE_WAIT_MS, m.port)
+        if msg <> invalid then dispatch(msg)
+        setState()
+    end while
+end sub
+
+' ===== The clock: what falls due, checked each pass =====
+
+sub tick(now as double)
+    if not m.stopping
+        ' A session that ended (its playback record says so) is let go like one the player stopped. The record
+        ' is a global, and each read waits on the render thread, so it's looked at every couple of seconds
+        if not m.top.active
+            beginStop()
+        else if now >= m.overCheckAt
+            m.overCheckAt = now + LANE_OVER_CHECK_MS
+            if sessionOver() then beginStop()
+        end if
+    end if
+    if m.stopping
+        if m.graceAt >= 0 and now >= m.graceAt then finish()
+        return
+    end if
+
+    if m.pending <> invalid and now >= m.pending.deadline
+        print "[silo-control] open timed out"
+        timedOut = m.pending
+        releaseSocket(timedOut)
+        m.pending = invalid
+        failedConnect(timedOut.renewing)
+    end if
+
+    if m.holder <> invalid
+        ' Open for the stable time, the attempts start over (R10)
+        if m.stableAt >= 0 and now >= m.stableAt
+            m.attempts = 0
+            m.stableAt = -1#
+        end if
+        ' Renewal waits while another connection is still opening (R7)
+        if m.pending = invalid and ((m.renewAt >= 0 and now >= m.renewAt) or (m.renewRetryAt >= 0 and now >= m.renewRetryAt))
+            attemptRenew()
+        end if
+    else if m.pending = invalid and (m.connectNow or (m.reconnectAt >= 0 and now >= m.reconnectAt))
+        connectOnce()
+    end if
+end sub
+
+' ===== Connecting =====
+
+' Whether a connect may start now: the lane is still wanted, and no connection holds it or is being opened
+function mayConnect() as boolean
+    return laneWanted() and m.holder = invalid and m.pending = invalid
+end function
+
+' Whether the lane is still wanted: active, not refused, and the session not over (R13)
+function laneWanted() as boolean
+    if not m.top.active or m.stopping or m.refused or m.done then return false
+    return not sessionOver()
+end function
+
+function sessionOver() as boolean
+    sessionId = m.top.sessionId
+    if sessionId = "" then return false
+    sessions = silo.PlaybackSessions()
+    record = sessions[sessionId]
+    if type(record) = "roAssociativeArray" and record.ended = true then return true
+    return m.global.siloPlaybackEnded = sessionId
+end function
+
+' A reconnect: the capability read and the ticket are blocking HTTP calls, so after each one the port is drained
+' and the lane's state checked again before going on (R7)
+sub connectOnce()
+    m.connectNow = false
+    m.reconnectAt = -1#
+    if not mayConnect() then return
+    m.connecting = true
+    setState()
+    print "[silo-control] connect"
+
+    available = silo.PlaybackControlAvailable(m.top.server, m.top.account, m.top.profileId)
+    drainPort()
+    if not mayConnect()
+        m.connecting = false
+        return
+    end if
+    if not available
+        m.connecting = false
+        ' A lane that was up and now says unavailable is a server restarting, so it's asked again (R12)
+        if m.everOpened
+            scheduleReconnect()
+        else
+            m.off = true
+            print "[silo-control] lane is off on this server"
+        end if
+        return
+    end if
+
+    ticket = silo.PlaybackControlTicket(m.top.server, m.top.account, m.top.profileId, m.top.sessionId, m.top.installationId)
+    drainPort()
+    m.connecting = false
+    if not mayConnect() then return
+    if not ticket.ok
+        print "[silo-control] ticket refused: " + ticket.refusal
+        nextStep = siloPlaybackControl.NextAfterTicket(ticket.refusal, false, m.everOpened)
+        if nextStep = "refused"
+            refuse()
+        else if nextStep = "gaveUp"
+            m.gaveUp = true
+        else
+            scheduleReconnect()
+        end if
+        return
+    end if
+    openPending(ticket, false)
+end sub
+
+' The renewal (R6): the new ticket is asked for while the holder still holds the lane, and the new connection
+' takes the lane when it opens
+sub attemptRenew()
+    m.renewAt = -1#
+    m.renewRetryAt = -1#
+    holder = m.holder
+    if holder = invalid or not laneWanted() then return
+    print "[silo-control] renew"
+
+    ticket = silo.PlaybackControlTicket(m.top.server, m.top.account, m.top.profileId, m.top.sessionId, m.top.installationId)
+    drainPort()
+    if not laneWanted() then return
+    if m.pending <> invalid then return
+    ' Another connection took the lane while the ticket was out: this renewal is no longer needed
+    if m.holder <> invalid and m.holder.id <> holder.id then return
+
+    if not ticket.ok
+        print "[silo-control] renewal ticket refused: " + ticket.refusal
+        nextStep = siloPlaybackControl.NextAfterTicket(ticket.refusal, true, m.everOpened)
+        if nextStep = "refused"
+            refuse()
+        else if nextStep = "renewOnClose"
+            ' The holder's close asks for the new ticket; if the holder already closed, that is now
+            m.renewOnClose = true
+            if m.holder = invalid then m.connectNow = true
+        else if m.holder <> invalid
+            renewRetryAfter()
+        else
+            scheduleReconnect()
+        end if
+        return
+    end if
+    openPending(ticket, true)
+end sub
+
+sub openPending(ticket as object, renewing as boolean)
+    ' bs:disable-next-line: 1129
+    ws = CreateObject("roWebSocket")
+    if type(ws) <> "roWebSocket"
+        print "[silo-control] this Roku has no roWebSocket"
+        m.off = true
+        return
+    end if
+    ws.SetMessagePort(m.port)
+    ws.SetProtocols(siloPlaybackControl.Protocols(ticket.ticket))
+    if not ws.SetUrl(siloPlaybackControl.SocketUrl(m.top.server, m.top.sessionId))
+        print "[silo-control] bad socket url"
+        failedConnect(renewing)
+        return
+    end if
+    ' Asynchronous: the answer comes as an opened or closed event
+    ws.Open(0)
+    m.pending = { ws: ws, id: ws.GetSocketId(), deadline: nowMs() + LANE_OPEN_MS, renewing: renewing, maxSeconds: ticket.maxConnectionSeconds }
+    if renewing
+        print "[silo-control] opening renewal"
+    else
+        print "[silo-control] opening"
+    end if
+end sub
+
+' A connection that opened with the right protocol takes the lane. The one that held it is let go after the hello
+' has gone out on the new one, and its close is owed, so it doesn't ask for a reconnect (R6, R7).
+sub makeHolder(p as object)
+    old = m.holder
+    m.pending = invalid
+    m.holder = { ws: p.ws, id: p.id }
+    m.everOpened = true
+    m.gaveUp = false
+    m.off = false
+    m.renewOnClose = false
+    m.connectNow = false
+    m.reconnectAt = -1#
+    m.renewRetryAt = -1#
+    p.ws.Send(FormatJson(siloPlaybackControl.Hello(m.top.sessionId, m.top.appVersion)))
+
+    now = nowMs()
+    m.stableAt = now + siloPlaybackControl.STABLE_SECONDS * 1000#
+    delay = renewDelay(p.maxSeconds)
+    m.renewAt = now + delay * 1000#
+    seconds = Int(delay)
+    print "[silo-control] open, renews in " + toString(seconds) + " s"
+
+    if old <> invalid
+        releaseSocket(old)
+        print "[silo-control] let go of the previous connection"
+    end if
+end sub
+
+' Renewal time from the connection's limit and the token's expiry. The token is read now, since it refreshes.
+function renewDelay(maxSeconds as dynamic) as double
+    tokens = silo.LoadTokens(m.top.server, m.top.account)
+    expiresAt = 0
+    lifetime = 0
+    if type(tokens) = "roAssociativeArray"
+        expiresAt = tokens.expiresAt ?? 0
+        lifetime = tokens.lifetime ?? 0
+    end if
+    return siloPlaybackControl.RenewDelaySeconds(maxSeconds, expiresAt, lifetime, silo.NowSeconds())
+end function
+
+' A connect or renewal that failed. While the holder still holds, a renewal tries again; otherwise a reconnect is
+' scheduled (R10).
+sub failedConnect(renewing as boolean)
+    if not laneWanted() then return
+    if renewing and m.holder <> invalid
+        renewRetryAfter()
+        return
+    end if
+    scheduleReconnect()
+end sub
+
+' Backoff for a reconnect. After MAX_ATTEMPTS it gives up until a retry pulse or a replan (R4, R10).
+sub scheduleReconnect()
+    if not laneWanted() then return
+    if m.reconnectAt >= 0 then return
+    if m.attempts >= siloPlaybackControl.MAX_ATTEMPTS
+        m.gaveUp = true
+        m.reconnectAt = -1#
+        print "[silo-control] gave up after repeated failures"
+        return
+    end if
+    delay = siloPlaybackControl.BackoffSeconds(m.attempts, Rnd(0))
+    m.attempts = m.attempts + 1
+    m.reconnectAt = nowMs() + delay * 1000#
+end sub
+
+' Backoff for a renewal retry. The holder keeps the lane; past MAX_ATTEMPTS the retries stop (R10).
+sub renewRetryAfter()
+    if not laneWanted() then return
+    if m.attempts >= siloPlaybackControl.MAX_ATTEMPTS then return
+    delay = siloPlaybackControl.BackoffSeconds(m.attempts, Rnd(0))
+    m.attempts = m.attempts + 1
+    m.renewRetryAt = nowMs() + delay * 1000#
+end sub
+
+' A final refusal (409/410): the session is over, or its lane is another installation's. Everything closes, and
+' no ticket is asked for again (R9).
+sub refuse()
+    print "[silo-control] refused for this session"
+    m.refused = true
+    m.renewOnClose = false
+    m.connectNow = false
+    m.reconnectAt = -1#
+    m.renewAt = -1#
+    m.renewRetryAt = -1#
+    m.stableAt = -1#
+    if m.pending <> invalid then releaseSocket(m.pending)
+    m.pending = invalid
+    if m.holder <> invalid then releaseSocket(m.holder)
+    m.holder = invalid
+    setState()
+end sub
+
+' The session's replan pulse (R4): a lane that gave up, or is off, tries again. A refused one stays refused.
+sub onRetry()
+    if m.refused or m.pending <> invalid or not laneWanted() then return
+    if m.holder <> invalid and not m.gaveUp and not m.off then return
+    print "[silo-control] retry"
+    m.attempts = 0
+    m.gaveUp = false
+    m.off = false
+    m.reconnectAt = -1#
+    m.connectNow = true
+end sub
+
+' ===== Ending =====
+
+' The lane is let go. A command still running gets the grace to send its result; then the holder closes.
+sub beginStop()
+    if m.stopping then return
+    m.stopping = true
+    m.reconnectAt = -1#
+    m.renewAt = -1#
+    m.renewRetryAt = -1#
+    m.stableAt = -1#
+    m.connectNow = false
+    if m.pending <> invalid
+        releaseSocket(m.pending)
+        m.pending = invalid
+    end if
+    print "[silo-control] let go"
+    if m.running.Count() = 0
+        finish()
+    else
+        m.graceAt = nowMs() + siloPlaybackControl.GRACE_SECONDS * 1000#
+    end if
+end sub
+
+sub finish()
+    m.graceAt = -1#
+    if m.pending <> invalid
+        releaseSocket(m.pending)
+        m.pending = invalid
+    end if
+    if m.holder <> invalid then releaseSocket(m.holder)
+    m.holder = invalid
+    m.cmdFrom = {}
+    m.running = {}
+    m.done = true
+    print "[silo-control] closed"
+    setState()
+end sub
+
+' The holder went away, by the server's close or an error. It asks for the next connection unless the lane is
+' finished, refused, or a connection is already opening, whose open or failure takes it from here.
+sub onHolderGone()
+    m.renewAt = -1#
+    m.renewRetryAt = -1#
+    m.stableAt = -1#
+    if m.stopping
+        if m.running.Count() = 0 then finish()
+        return
+    end if
+    if not laneWanted() then return
+    if m.renewOnClose
+        m.renewOnClose = false
+        m.connectNow = true
+        return
+    end if
+    if m.pending = invalid then scheduleReconnect()
+end sub
+
+' ===== The socket's events =====
+
+sub drainPort()
+    msg = m.port.GetMessage()
+    while msg <> invalid
+        dispatch(msg)
+        msg = m.port.GetMessage()
+    end while
+end sub
+
+sub dispatch(msg as object)
+    if type(msg) = "roSGNodeEvent"
+        field = msg.getField()
+        if field = "active"
+            if msg.getData() = false then beginStop()
+        else if field = "retry"
+            if msg.getData() = true then onRetry()
+        else if field = "answer"
+            onAnswer(msg.getData())
+        end if
+    else if type(msg) = "roWebSocketEvent"
+        onSocketEvent(msg)
+    end if
+end sub
+
+' A socket this Task released owes its closed event, which is ignored. Any other socket that is neither the holder
+' nor the pending one is ignored too.
+sub onSocketEvent(msg as object)
+    id = msg.GetSocketId()
+    eventType = msg.GetType()
+    if eventType = LANE_EVENT_CLOSED and consumeOwed(id) then return
+    if m.holder <> invalid and id = m.holder.id
+        onHolderEvent(eventType, msg)
+    else if m.pending <> invalid and id = m.pending.id
+        onPendingEvent(eventType)
+    end if
+end sub
+
+sub onHolderEvent(eventType as integer, msg as object)
+    if eventType = LANE_EVENT_TEXT
+        info = msg.GetInfo()
+        text = ""
+        if type(info) = "roAssociativeArray" then text = toString(info.Text)
+        onText(text)
+    else if eventType = LANE_EVENT_CLOSED
+        code = closeCode(msg.GetInfo())
+        print "[silo-control] closed by server, code " + toString(code)
+        m.holder = invalid
+        onHolderGone()
+    else if eventType = LANE_EVENT_ERROR
+        print "[silo-control] connection error"
+        m.holder = invalid
+        onHolderGone()
+    end if
+end sub
+
+sub onPendingEvent(eventType as integer)
+    p = m.pending
+    if eventType = LANE_EVENT_OPENED
+        ' The server answers with the protocol it accepted; any other ends the attempt
+        if toString(p.ws.GetSelectedProtocol()) <> siloPlaybackControl.PROTOCOL
+            print "[silo-control] server chose another protocol"
+            releaseSocket(p)
+            m.pending = invalid
+            failedConnect(p.renewing)
+            return
+        end if
+        makeHolder(p)
+    else if eventType = LANE_EVENT_CLOSED or eventType = LANE_EVENT_ERROR
+        print "[silo-control] open failed"
+        m.pending = invalid
+        failedConnect(p.renewing)
+    end if
+end sub
+
+function closeCode(info as dynamic) as integer
+    if type(info) = "roAssociativeArray" and info.Code <> invalid then return info.Code
+    return 0
+end function
+
+' Releases a socket this Task closes: it owes a closed event, which is ignored when it comes
+sub releaseSocket(socket as object)
+    socket.ws.Close(1000, "")
+    m.owed[socket.id.ToStr()] = nowMs()
+end sub
+
+function consumeOwed(id as integer) as boolean
+    key = id.ToStr()
+    if not m.owed.DoesExist(key) then return false
+    at = m.owed[key]
+    m.owed.Delete(key)
+    return nowMs() - at < LANE_OWED_MS
+end function
+
+' Text only from the holder, and only while the lane is still wanted: a connection being let go takes no new command
+sub onText(text as string)
+    if not laneWanted() then return
+    cmd = siloPlaybackControl.ParseCommand(text, m.top.sessionId)
+    if type(cmd) <> "roAssociativeArray" then return
+    m.cmdFrom[cmd.id] = m.holder.ws
+    print "[silo-control] command " + cmd.name + " " + cmd.id
+    m.top.command = { id: cmd.id, name: cmd.name, payload: cmd.payload, reason: cmd.reason, sessionId: m.top.sessionId }
+end sub
+
+' The player's answer: an ack marks the command running, a result ends it. Answers go on the holder, else on the
+' connection the command came on.
+sub onAnswer(answer as dynamic)
+    if type(answer) <> "roAssociativeArray" then return
+    id = toString(answer.id)
+    if id = "" then return
+    if answer.type = "ack"
+        m.running[id] = true
+        sendAnswer(id, siloPlaybackControl.Ack(m.top.sessionId, id), "ack")
+    else if answer.type = "result"
+        if m.running.DoesExist(id) then m.running.Delete(id)
+        sendAnswer(id, siloPlaybackControl.Result(m.top.sessionId, id, answer.error), "result")
+        if m.cmdFrom.DoesExist(id) then m.cmdFrom.Delete(id)
+        if m.stopping and m.running.Count() = 0 then finish()
+    end if
+end sub
+
+sub sendAnswer(id as string, frame as object, kind as string)
+    target = invalid
+    if m.holder <> invalid
+        target = m.holder.ws
+    else if m.cmdFrom.DoesExist(id)
+        target = m.cmdFrom[id]
+    end if
+    if target = invalid
+        print "[silo-control] " + kind + " " + id + " dropped, no open connection"
+        return
+    end if
+    target.Send(FormatJson(frame))
+    print "[silo-control] " + kind + " " + id
+end sub
+
+' ===== Time and state =====
+
+function nowMs() as double
+    return m.clock.TotalMilliseconds()
+end function
+
+sub setState()
+    s = "idle"
+    if m.done
+        s = "closed"
+    else if m.refused
+        s = "refused"
+    else if m.holder <> invalid
+        s = "open"
+    else if m.gaveUp
+        s = "gaveUp"
+    else if m.off
+        s = "off"
+    else if m.pending <> invalid or m.connecting
+        s = "connecting"
+    end if
+    if m.top.state <> s then m.top.state = s
+end sub

@@ -1,0 +1,217 @@
+import "pkg:/source/api/silo/SiloSession.bs"
+
+' Silo's playback control socket (/api/v2/playback/sessions/{id}/control/ws): the pure rules the lane follows, kept
+' free of nodes and network so test/silo-playback-control.bs can check them. Ported from Smart-TV's
+' siloPlaybackControl.js. Times are seconds.
+namespace siloPlaybackControl
+    const PROTOCOL = "silo.playback-control.v2"
+    ' Silo closes a connection after max_connection_seconds (or when its token expires), so the lane renews a minute early
+    const DEFAULT_MAX_CONNECTION_SECONDS = 14400
+    const RENEW_MARGIN_SECONDS = 60
+    const RENEW_FLOOR_SECONDS = 5
+    const BACKOFF_CAP_SECONDS = 30
+    const MAX_JITTER_SECONDS = 0.5
+    ' A connection that stays up this long counts as working, so the next drop starts the backoff over
+    const STABLE_SECONDS = 30
+    const MAX_ATTEMPTS = 10
+    ' How long a lane let go of waits for a command still running (a stop ends its own session)
+    const GRACE_SECONDS = 5
+    const CAPS_TTL_SECONDS = 600
+
+    ' The hello list, in the order Silo's protocol document gives it. Silo sends terminate even when it isn't listed.
+    function Commands() as object
+        return ["pause", "unpause", "play_pause", "stop", "display_message", "server_restarting", "server_shutting_down", "terminate"]
+    end function
+
+    ' A JSON number arrives as any of the number types. Anything else counts as zero, so a missing value is ignored.
+    function IsNumeric(value as dynamic) as boolean
+        if not isValid(value) then return false
+        kind = LCase(type(value))
+        if Left(kind, 2) = "ro" then kind = Mid(kind, 3)
+        return kind = "integer" or kind = "float" or kind = "double" or kind = "longinteger"
+    end function
+
+    function AsNumber(value as dynamic) as double
+        if not siloPlaybackControl.IsNumeric(value) then return 0#
+        return value * 1#
+    end function
+
+    function IsText(value as dynamic) as boolean
+        if not isValid(value) then return false
+        kind = LCase(type(value))
+        if Left(kind, 2) = "ro" then kind = Mid(kind, 3)
+        return kind = "string"
+    end function
+
+    function IsMap(value as dynamic) as boolean
+        if not isValid(value) then return false
+        kind = LCase(type(value))
+        return kind = "roassociativearray" or kind = "associativearray"
+    end function
+
+    function Trimmed(value as dynamic) as string
+        if not siloPlaybackControl.IsText(value) then return ""
+        return value.Trim()
+    end function
+
+    ' The server base as one spelling, the same one silo.Call builds its requests on. Smart-TV's lane compared raw
+    ' strings and every command read not_playing, so both sides of every comparison go through this.
+    function ServerKey(server as string) as string
+        return silo.ServerKey(server)
+    end function
+
+    ' The socket URL for a session on a server: http becomes ws and https becomes wss. The id is URL-encoded, and
+    ' there is no query string, since the credential goes in the protocols instead.
+    function SocketUrl(server as string, sessionId as string) as string
+        base = siloPlaybackControl.ServerKey(server)
+        socketBase = "ws" + Mid(base, 5)
+        if Left(LCase(base), 5) = "https" then socketBase = "wss" + Mid(base, 6)
+        return socketBase + "/api/v2/playback/sessions/" + sessionId.EncodeUriComponent() + "/control/ws"
+    end function
+
+    ' The two protocols as one comma-separated string, the form siloParty.Protocols gives SetProtocols. The ticket
+    ' goes here and not in the URL, so it stays out of logs that show the address.
+    function Protocols(ticket as string) as string
+        return siloPlaybackControl.PROTOCOL + ", silo.ticket." + ticket
+    end function
+
+    ' Renewal happens a minute before the connection's limit or the token's expiry, whichever is first, and never sooner
+    ' than 5 s. A token with no lifetime (Roku's TokensFrom can store one) has no expiry to honour, and counting its
+    ' zero as one renewed every few seconds on Smart-TV's first version.
+    function RenewDelaySeconds(maxConnectionSeconds as dynamic, expiresAt as dynamic, lifetime as dynamic, now as dynamic) as double
+        maxSeconds = siloPlaybackControl.AsNumber(maxConnectionSeconds)
+        if maxSeconds <= 0 then maxSeconds = DEFAULT_MAX_CONNECTION_SECONDS * 1#
+        delay = maxSeconds - RENEW_MARGIN_SECONDS
+        if siloPlaybackControl.AsNumber(lifetime) > 0 and siloPlaybackControl.AsNumber(expiresAt) > 0
+            tokenDelay = siloPlaybackControl.AsNumber(expiresAt) - siloPlaybackControl.AsNumber(now) - RENEW_MARGIN_SECONDS
+            if tokenDelay < delay then delay = tokenDelay
+        end if
+        if delay < RENEW_FLOOR_SECONDS then delay = RENEW_FLOOR_SECONDS * 1#
+        return delay
+    end function
+
+    ' Waits double from 1 s up to 30 s (the exponent stops at 5), plus up to half a second of jitter so a server
+    ' restart doesn't see every client knock at once
+    function BackoffSeconds(attempt as integer, jitter as double) as double
+        steps = attempt
+        if steps < 0 then steps = 0
+        if steps > 5 then steps = 5
+        base = 1#
+        for i = 1 to steps
+            base = base * 2#
+        end for
+        if base > BACKOFF_CAP_SECONDS then base = BACKOFF_CAP_SECONDS * 1#
+        extra = jitter
+        if extra < 0 then extra = 0
+        if extra > 1 then extra = 1
+        return base + extra * MAX_JITTER_SECONDS
+    end function
+
+    ' 409 and 410 mean the session is over, or its lane belongs to another installation: never ask again. 401 and 403
+    ' are the token. Anything else (404 while a server is settling, 503, no answer) is retried with backoff.
+    function TicketRefusal(status as integer) as string
+        if status = 409 or status = 410 then return "final"
+        if status = 401 or status = 403 then return "token"
+        return "retry"
+    end function
+
+    ' What the lane does after a ticket fails. A refused token on a renewal waits for the old connection to close, so
+    ' the new ticket is asked for while the old connection still holds the lane's place.
+    function NextAfterTicket(refusal as string, renewing as boolean, everOpened as boolean) as string
+        if refusal = "final" then return "refused"
+        if refusal = "token"
+            if renewing then return "renewOnClose"
+            return "gaveUp"
+        end if
+        ' everOpened doesn't change a ticket answer: a lane that was up retries the same way as one that never was
+        return "backoff"
+    end function
+
+    ' The capability answer, when it says the lane is usable here. allowed:false is per login, so it doesn't count.
+    function CapsUsable(answer as dynamic) as boolean
+        if not siloPlaybackControl.IsMap(answer) then return false
+        if answer.allowed = false then return false
+        return answer.available = true and answer.protocol = siloPlaybackControl.PROTOCOL
+    end function
+
+    ' Keep a usable answer, or a 404 (an older server with no lane). Keeping anything else would hide a server that
+    ' starts up, or a login that gets the lane later.
+    function CapsKeep(status as integer, usable as boolean) as boolean
+        return usable or status = 404
+    end function
+
+    ' A command frame from the lane's session, or invalid. Frames of another session, or any that aren't a command
+    ' with an id, are ignored. The reason is invalid when it's missing or blank.
+    function ParseCommand(text as string, sessionId as string) as dynamic
+        if sessionId = "" then return invalid
+        ' Only an object can be a command, and ParseJson prints an error for anything that isn't JSON
+        if Left(text.Trim(), 1) <> "{" then return invalid
+        frame = ParseJson(text)
+        if not siloPlaybackControl.IsMap(frame) then return invalid
+        if not (frame.type = "command") then return invalid
+        if not siloPlaybackControl.IsText(frame.command_id) or frame.command_id = "" then return invalid
+        if not (frame.session_id = sessionId) then return invalid
+
+        payload = {}
+        if siloPlaybackControl.IsMap(frame.payload) then payload = frame.payload
+        reason = invalid
+        if siloPlaybackControl.Trimmed(frame.reason) <> "" then reason = siloPlaybackControl.Trimmed(frame.reason)
+
+        out = { id: frame.command_id, name: "", payload: payload, reason: reason }
+        if siloPlaybackControl.IsText(frame.name) then out.name = frame.name
+        return out
+    end function
+
+    ' What a command does on the player, or invalid for one the lane doesn't run. A message is shown over the video
+    ' without taking focus. The title is shown as a header only when the message has text too; a title-only notice
+    ' shows the title as its text, and a notice with neither is refused.
+    function ActionOf(name as string, payload as dynamic) as dynamic
+        data = {}
+        if siloPlaybackControl.IsMap(payload) then data = payload
+        if name = "pause" then return { kind: "pause", title: "", text: "" }
+        if name = "unpause" then return { kind: "resume", title: "", text: "" }
+        if name = "play_pause" then return { kind: "toggle", title: "", text: "" }
+        if name = "stop" then return { kind: "stop", title: "", text: "" }
+        if name = "terminate" then return { kind: "terminate", title: "", text: "" }
+        if name = "display_message" or name = "server_restarting" or name = "server_shutting_down"
+            text = siloPlaybackControl.Trimmed(data.message)
+            title = siloPlaybackControl.Trimmed(data.title)
+            body = text
+            if body = "" then body = title
+            if body = "" then return invalid
+            header = ""
+            if text <> "" and title <> "" then header = title
+            return { kind: "message", title: header, text: body }
+        end if
+        return invalid
+    end function
+
+    ' The hello frame: the first frame on every connection, renewals included
+    function Hello(sessionId as string, appVersion as string) as object
+        version = appVersion
+        if version = "" then version = "0"
+        return { type: "hello", session_id: sessionId, client: { name: "Moonfin", version: version }, capabilities: { commands: siloPlaybackControl.Commands() } }
+    end function
+
+    ' Sent before a command runs
+    function Ack(sessionId as string, commandId as string) as object
+        return { type: "ack", command_id: commandId, session_id: sessionId, status: "accepted" }
+    end function
+
+    ' Sent after a command runs. A rejection names its reason; no reason means it completed.
+    function Result(sessionId as string, commandId as string, rejection as dynamic) as object
+        out = { type: "result", command_id: commandId, session_id: sessionId, status: "completed" }
+        if siloPlaybackControl.IsText(rejection) and rejection <> ""
+            out.status = "rejected"
+            out.error = rejection
+        end if
+        return out
+    end function
+
+    ' Whether the player still plays the session the lane is for. Taking the lane, running a command and a replan
+    ' all ask this one question, so they can't disagree. Both halves must name a session, or nothing plays it.
+    function StillPlays(playerServerKey as string, playerSessionId as string, laneServerKey as string, laneSessionId as string) as boolean
+        if playerServerKey = "" or playerSessionId = "" or laneServerKey = "" or laneSessionId = "" then return false
+        return playerServerKey = laneServerKey and playerSessionId = laneSessionId
+    end function
+end namespace
