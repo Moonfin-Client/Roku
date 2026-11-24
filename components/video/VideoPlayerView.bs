@@ -114,6 +114,7 @@ sub init()
     m.liveLastState = ""
     m.liveReconnecting = ""
     m.liveLost = false
+    m.liveStartup = invalid
     ' The session holding the channel's stream, and the one a reload replaced, which keeps its
     ' stream until the new one is back. Each is stopped once.
     m.liveSession = invalid
@@ -4122,6 +4123,8 @@ sub onLiveStreamLoaded(load as string)
 
     closeReplacedLiveSession()
     m.liveSession = playbackReportParams()
+    ' Each stream gets its own first 30s, and one go back in them
+    m.liveStartup = { playedAt: invalid, done: false }
     hideLiveFailedCard()
     if not isValid(m.liveRecovery) then m.liveRecovery = liveRecovery.Create()
     m.liveRecovery.directPlay = not m.isTranscoded
@@ -4145,6 +4148,7 @@ end sub
 sub feedLiveRecovery(state as string)
     if not isValid(m.liveChannel) then return
     now = liveNow()
+    rewindStartupStall(state, now)
     resumed = m.liveLastState = MediaPlaybackState.PAUSED and (state = MediaPlaybackState.BUFFERING or state = MediaPlaybackState.PLAYING)
     afterError = m.liveLastState = MediaPlaybackState.ERROR
     m.liveLastState = state
@@ -4163,6 +4167,29 @@ sub feedLiveRecovery(state as string)
         return
     end if
     runLiveRecovery()
+end sub
+
+' A live HLS stream starts with a segment or two in hand and the server makes more only as fast as
+' the channel airs, so a slow start runs it dry. The first stall in its first 30s of play goes back
+' just far enough for a cushion, and never forward. A TS stream has no duration to go back in. A
+' rewind window opens only after a minute, so no seek of the viewer's can be the buffering here, and
+' a pause ends the watch since the seek Unpause Rewind makes on resume buffers too.
+sub rewindStartupStall(state as string, now as integer)
+    startup = m.liveStartup
+    if not isValid(startup) then return
+    if state = MediaPlaybackState.PAUSED then startup.done = true
+    if state = MediaPlaybackState.PLAYING
+        if startup.playedAt = invalid then startup.playedAt = now
+        return
+    end if
+    if startup.done or state <> MediaPlaybackState.BUFFERING or m.liveLastState <> MediaPlaybackState.PLAYING or m.top.duration <= 0 then return
+    playedFor = now - startup.playedAt
+    target = m.top.duration - LIVE_STARTUP_CUSHION_SECONDS
+    if target < 0 then target = 0
+    if playedFor >= LIVE_STARTUP_STALL_MS or target >= m.top.position then return
+    startup.done = true
+    diagnostics.Playback(`Live stream ran dry ${playedFor}ms into play, going back to ${target}s of ${m.top.duration}s`, diagnostics.LEVEL_WARN)
+    m.top.seek = target
 end sub
 
 ' A channel past its tune is the recovery's to bring back. Before its first frame it steps down
@@ -4203,12 +4230,13 @@ function liveFallbackMethod() as string
     return PlaybackMethod.FORCETRANSCODEDISABLEREMUX
 end function
 
-' What an attempt asks the server for: the channel the way it was tuned, the server's own stream
-' for a direct played one, or a channel the server already serves transcoded off its codec
-function liveReResolveRequest(route as object, videoCodec as string) as object
+' What an attempt asks the server for: the channel on the route it plays on now, so one whose direct
+' play failed at the tune stays off it, the server's own stream for a direct played one, or a
+' channel the server already serves transcoded off its codec
+function liveReResolveRequest(route as object, videoCodec as string, current as object) as object
     if route.forceTranscode then return { playbackMethod: PlaybackMethod.FORCETRANSCODEDISABLEREMUX, transcodeCodec: videoCodec }
     if route.disableDirectPlay then return { playbackMethod: PlaybackMethod.FORCELIVETVREMUX, transcodeCodec: "" }
-    return { playbackMethod: "", transcodeCodec: "" }
+    return { playbackMethod: current.playbackMethod, transcodeCodec: current.transcodeCodec }
 end function
 
 function liveReconnectingLabel(status as dynamic) as string
@@ -4290,7 +4318,7 @@ end sub
 ' Gives the channel back and asks the server for it again on the route the attempt picked. The
 ' stop frees the tuner and ends the server's job, and direct play has no job to wait on.
 sub reResolveLiveChannel(route as object)
-    m.liveReResolve = liveReResolveRequest(route, m.videoCodec)
+    m.liveReResolve = liveReResolveRequest(route, m.videoCodec, m.LoadMetaDataTask)
     m.liveLoad = "reResolve"
     stopTask = releaseLiveSessions()
     m.top.control = VideoControl.STOP
