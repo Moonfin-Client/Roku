@@ -1565,7 +1565,7 @@ process.stdout.write('PASS: classic home info area wiring\n');
 assert.match(await readFile('source/utils/misc.bs', 'utf8'), /defaultPadding = 360/, 'Modern rows default to the smallest padding');
 assert.match(await readFile('source/utils/misc.bs', 'utf8'), /return \(padding - 10\) \* 2/, 'Classic rows sit 10 closer');
 const mediaBarTaskWiring = await readFile('components/home/MediaBarTask.bs', 'utf8');
-assert.match(mediaBarTaskWiring, /while running\.count\(\) < 6 and nextSource < parentIds\.count\(\) and items\.count\(\) < m\.top\.featuredCount \* 2/, 'The media bar reads six sources at a time and stops at twice what it shows');
+assert.match(mediaBarTaskWiring, /while running\.count\(\) < 6 and nextSource < parentIds\.count\(\) and \(dated or items\.count\(\) < m\.top\.featuredCount \* 2\)/, 'The media bar reads six sources at a time, stops random reads at twice what it shows, and reads every source for dated feeds');
 assert.match(mediaBarTaskWiring, /pool = readSources\(shuffleArray\(parentIds\), query, excludedGenreNames\)/, 'It reads its sources in a shuffled order');
 assert.match(mediaBarTaskWiring, /parentIds = filterIdsBySelection\(libraryIds, selectedLibraryIds\)\s+parentIds\.append\(selectedCollectionIds\)/, 'Every source reads the picked libraries and collections together');
 for (const file of ['components/JFOverhang.bs', 'components/Sidebar.bs']) {

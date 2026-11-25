@@ -134,7 +134,7 @@ end function
 ' Reads the sources six at a time. Random sources shuffle and stop once twice as many usable
 ' titles are in hand; dated sources read every source and interleave one title per source in turn
 ' so faster later sources cannot steal shared titles from earlier sources.
-function readSources(parentIds as object, query as object, excludedGenreNames as object, path = "/Items/" as string, dated = false as boolean) as object
+function readSources(parentIds as object, query as object, excludedGenreNames as object, path = "/Items/" as string, dated = false as boolean, returnBatches = false as boolean) as object
     port = CreateObject("roMessagePort")
     running = {}
     runningIndex = {}
@@ -189,6 +189,7 @@ function readSources(parentIds as object, query as object, excludedGenreNames as
     end while
 
     if not dated then return items
+    if returnBatches then return batches
 
     ' Interleave deterministically in source order, deduplicating across sources by turn
     interleaved = []
@@ -241,29 +242,61 @@ function readDatedSources(parentIds as object, sourceType as string, includeType
     since = CreateObject("roDateTime")
     since.FromSeconds(now - days * 86400)
     episodeQuery = { userId: m.top.userId, includeItemTypes: "Episode", recursive: true, sortBy: "PremiereDate", sortOrder: "Descending", minPremiereDate: since.ToISOString(), limit: 300, fields: "DateCreated" }
-    seriesIds = []
+    episodeBatches = readSources(parentIds, episodeQuery, [], "/Items/", true, true)
     latestAired = {}
     latestAdded = {}
-    for each episode in mediaBarNewRelease.RecentlyAired(readSources(parentIds, episodeQuery, [], "/Items/", true), now, days)
-        seriesId = toString(episode.LookupCI("SeriesId"))
-        if seriesId <> ""
-            if not inArray(seriesIds, seriesId) and seriesIds.count() < 40 then seriesIds.push(seriesId)
-            epPremiere = toString(episode.LookupCI("PremiereDate"))
-            if isServerDate(epPremiere)
-                epSec = parseIsoSeconds(epPremiere)
-                if not latestAired.DoesExist(seriesId) or epSec > latestAired[seriesId].sec
-                    latestAired[seriesId] = { sec: epSec, iso: epPremiere }
+    seriesBatches = []
+    for each batch in episodeBatches
+        libSeries = []
+        libSeen = {}
+        for each episode in mediaBarNewRelease.RecentlyAired(batch, now, days)
+            seriesId = toString(episode.LookupCI("SeriesId"))
+            if seriesId <> ""
+                if not libSeen.DoesExist(seriesId)
+                    libSeen[seriesId] = true
+                    libSeries.push(seriesId)
+                end if
+                epPremiere = toString(episode.LookupCI("PremiereDate"))
+                epPremiereKey = isoDateTimeKey(epPremiere)
+                if epPremiereKey <> "" and (not latestAired.DoesExist(seriesId) or epPremiereKey > latestAired[seriesId].key)
+                    latestAired[seriesId] = { key: epPremiereKey, iso: epPremiere }
+                end if
+                epAdded = toString(episode.LookupCI("DateCreated"))
+                epAddedKey = isoDateTimeKey(epAdded)
+                if epAddedKey <> "" and (not latestAdded.DoesExist(seriesId) or epAddedKey > latestAdded[seriesId].key)
+                    latestAdded[seriesId] = { key: epAddedKey, iso: epAdded }
                 end if
             end if
-            epAdded = toString(episode.LookupCI("DateCreated"))
-            if isServerDate(epAdded)
-                addSec = parseIsoSeconds(epAdded)
-                if not latestAdded.DoesExist(seriesId) or addSec > latestAdded[seriesId].sec
-                    latestAdded[seriesId] = { sec: addSec, iso: epAdded }
-                end if
-            end if
-        end if
+        end for
+        seriesBatches.push(libSeries)
     end for
+
+    ' Interleave by series across libraries so a multi-episode season drop in one library
+    ' does not spend extra turns on the same show.
+    seriesIds = []
+    seenSeries = {}
+    cursors = []
+    for i = 0 to seriesBatches.count() - 1
+        cursors.push(0)
+    end for
+    progressed = true
+    while progressed and seriesIds.count() < 40
+        progressed = false
+        for sIdx = 0 to seriesBatches.count() - 1
+            if seriesIds.count() >= 40 then exit for
+            libSeries = seriesBatches[sIdx]
+            while cursors[sIdx] < libSeries.count() and seenSeries.DoesExist(libSeries[cursors[sIdx]])
+                cursors[sIdx] = cursors[sIdx] + 1
+            end while
+            if cursors[sIdx] < libSeries.count()
+                sid = libSeries[cursors[sIdx]]
+                cursors[sIdx] = cursors[sIdx] + 1
+                seenSeries[sid] = true
+                seriesIds.push(sid)
+                progressed = true
+            end if
+        end for
+    end while
     if seriesIds.count() = 0 then return []
 
     items = []
@@ -292,42 +325,48 @@ function normalizeSortOrder(value as dynamic) as string
     return "default"
 end function
 
-function parseIsoSeconds(iso as dynamic) as integer
-    if not isServerDate(iso) then return 0
-    dt = CreateObject("roDateTime")
-    dt.FromISO8601String(Left(iso, 19) + "Z")
-    return dt.AsSeconds()
+' Lexicographical UTC timestamp key ("YYYY-MM-DDTHH:MM:SS") so pre-1970 and modern dates compare
+' accurately without repeated roDateTime allocations.
+function isoDateTimeKey(value as dynamic) as string
+    if not isServerDate(value) then return ""
+    if Len(value) >= 19 then return Left(value, 19)
+    if Len(value) >= 10 then return Left(value, 10) + "T00:00:00"
+    return Left(value, 4) + "-01-01T00:00:00"
 end function
 
-function dateAddedSecondsOf(item as object) as integer
-    eff = parseIsoSeconds(item.LookupCI("_effectiveDateCreated"))
-    lastMedia = parseIsoSeconds(item.LookupCI("DateLastMediaAdded"))
-    if eff > 0 and eff >= lastMedia then return eff
-    if lastMedia > 0 then return lastMedia
-    return parseIsoSeconds(item.LookupCI("DateCreated"))
+' Calendar day key ("YYYY-MM-DD") matching releaseDay() so pre-1970 classic films keep their
+' exact month and day instead of clamping to Unix epoch 0.
+function isoDateKey(value as dynamic) as string
+    if not isServerDate(value) then return ""
+    if Len(value) >= 10 then return Left(value, 10)
+    return Left(value, 4) + "-01-01"
 end function
 
-function releaseDateSecondsOf(item as object) as integer
-    eff = parseIsoSeconds(item.LookupCI("_effectivePremiereDate"))
-    if eff > 0 then return eff
-    premiere = parseIsoSeconds(item.LookupCI("PremiereDate"))
-    if premiere > 0 then return premiere
+function dateAddedKeyOf(item as object) as string
+    eff = isoDateTimeKey(item.LookupCI("_effectiveDateCreated"))
+    lastMedia = isoDateTimeKey(item.LookupCI("DateLastMediaAdded"))
+    if eff <> "" and (lastMedia = "" or eff >= lastMedia) then return eff
+    if lastMedia <> "" then return lastMedia
+    return isoDateTimeKey(item.LookupCI("DateCreated"))
+end function
+
+function releaseDateKeyOf(item as object) as string
+    eff = isoDateKey(item.LookupCI("_effectivePremiereDate"))
+    if eff <> "" then return eff
+    premiere = isoDateKey(item.LookupCI("PremiereDate"))
+    if premiere <> "" then return premiere
     yearVal = item.LookupCI("ProductionYear")
     if isValid(yearVal)
-        yearNum = Val(yearVal.toStr())
-        if yearNum > 0
-            dt = CreateObject("roDateTime")
-            dt.FromISO8601String(`${Int(yearNum).toStr()}-01-01T00:00:00Z`)
-            return dt.AsSeconds()
-        end if
+        yearNum = Int(Val(yearVal.toStr()))
+        if yearNum > 0 then return Right("000" + yearNum.toStr(), 4) + "-01-01"
     end if
-    return 0
+    return ""
 end function
 
-function compareSlideDates(a as integer, b as integer, descending as boolean) as integer
-    if a = 0 and b = 0 then return 0
-    if a = 0 then return 1
-    if b = 0 then return -1
+function compareDateKeys(a as string, b as string, descending as boolean) as integer
+    if a = "" and b = "" then return 0
+    if a = "" then return 1
+    if b = "" then return -1
     if a = b then return 0
     if descending then return (b > a) ? 1 : -1
     return (a > b) ? 1 : -1
@@ -342,38 +381,45 @@ function sortSlides(slides as object, sortOrder as string) as object
     descending = (sortOrder = "dateAddedDesc" or sortOrder = "releaseDateDesc")
     byDateAdded = (sortOrder = "dateAddedDesc" or sortOrder = "dateAddedAsc")
 
-    ordered = []
+    ' Precompute sort keys once per slide before sorting
+    entries = []
     for each s in slides
-        ordered.push(s)
+        addedKey = dateAddedKeyOf(s)
+        releaseKey = releaseDateKeyOf(s)
+        entries.push({
+            item: s,
+            primary: byDateAdded ? addedKey : releaseKey,
+            secondary: byDateAdded ? releaseKey : addedKey,
+            name: LCase(toString(s.LookupCI("Name")))
+        })
     end for
 
     ' Insertion sort (stable, fast for <= 50 slides)
-    for i = 1 to ordered.count() - 1
-        current = ordered[i]
+    for i = 1 to entries.count() - 1
+        current = entries[i]
         j = i - 1
-        while j >= 0 and shouldSwapSlides(ordered[j], current, byDateAdded, descending)
-            ordered[j + 1] = ordered[j]
+        while j >= 0 and shouldSwapEntries(entries[j], current, descending)
+            entries[j + 1] = entries[j]
             j = j - 1
         end while
-        ordered[j + 1] = current
+        entries[j + 1] = current
+    end for
+
+    ordered = []
+    for each entry in entries
+        ordered.push(entry.item)
     end for
     return ordered
 end function
 
-function shouldSwapSlides(leftItem as object, rightItem as object, byDateAdded as boolean, descending as boolean) as boolean
-    pA = byDateAdded ? dateAddedSecondsOf(leftItem) : releaseDateSecondsOf(leftItem)
-    pB = byDateAdded ? dateAddedSecondsOf(rightItem) : releaseDateSecondsOf(rightItem)
-    cmp = compareSlideDates(pA, pB, descending)
+function shouldSwapEntries(leftEntry as object, rightEntry as object, descending as boolean) as boolean
+    cmp = compareDateKeys(leftEntry.primary, rightEntry.primary, descending)
     if cmp <> 0 then return cmp > 0
 
-    sA = byDateAdded ? releaseDateSecondsOf(leftItem) : dateAddedSecondsOf(leftItem)
-    sB = byDateAdded ? releaseDateSecondsOf(rightItem) : dateAddedSecondsOf(rightItem)
-    cmp2 = compareSlideDates(sA, sB, descending)
+    cmp2 = compareDateKeys(leftEntry.secondary, rightEntry.secondary, descending)
     if cmp2 <> 0 then return cmp2 > 0
 
-    nameA = LCase(toString(leftItem.LookupCI("Name")))
-    nameB = LCase(toString(rightItem.LookupCI("Name")))
-    return nameA > nameB
+    return leftEntry.name > rightEntry.name
 end function
 
 ' The Recently Added and Recently Released pools follow Hide Watched like their rows
