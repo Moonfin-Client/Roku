@@ -9842,5 +9842,101 @@
         <source>Top Rated TV</source>
         <translation>Sèries més valorades</translation>
     </message>
+    <message>
+        <source>Because You Watched</source>
+        <translation type="unfinished">Perquè vas veure</translation>
+    </message>
+    <message>
+        <source>Hidden Gems</source>
+        <translation>Joies amagades</translation>
+    </message>
+    <message>
+        <source>Next in Your Series</source>
+        <translation>El següent de les teves sèries</translation>
+    </message>
+    <message>
+        <source>Profiles Like You Enjoyed</source>
+        <translation>Han agradat a perfils com el teu</translation>
+    </message>
+    <message>
+        <source>Random Picks</source>
+        <translation>Seleccions aleatòries</translation>
+    </message>
+    <message>
+        <source>Recently Added Audiobooks</source>
+        <translation>Audiollibres afegits recentment</translation>
+    </message>
+    <message>
+        <source>Recently Added Ebooks</source>
+        <translation>Llibres electrònics afegits recentment</translation>
+    </message>
+    <message>
+        <source>Recently Added in %1</source>
+        <translation>Afegit recentment a %1</translation>
+    </message>
+    <message>
+        <source>Recently Added Manga</source>
+        <translation>Manga afegit recentment</translation>
+    </message>
+    <message>
+        <source>Recently Added Movies</source>
+        <translation>Pel·lícules afegides recentment</translation>
+    </message>
+    <message>
+        <source>Recently Added TV</source>
+        <translation type="unfinished">TV afegida recentment</translation>
+    </message>
+    <message>
+        <source>Recently Released Audiobooks</source>
+        <translation>Audiollibres publicats recentment</translation>
+    </message>
+    <message>
+        <source>Recently Released Ebooks</source>
+        <translation>Llibres electrònics publicats recentment</translation>
+    </message>
+    <message>
+        <source>Recently Released Episodes in %1</source>
+        <translation>Episodis publicats recentment a %1</translation>
+    </message>
+    <message>
+        <source>Recently Released in %1</source>
+        <translation>Publicat recentment a %1</translation>
+    </message>
+    <message>
+        <source>Recently Released Manga</source>
+        <translation>Manga publicat recentment</translation>
+    </message>
+    <message>
+        <source>Recently Released Movies</source>
+        <translation type="unfinished">Pel·lícules publicades recentment</translation>
+    </message>
+    <message>
+        <source>Recommended for You</source>
+        <translation>Recomanat per a tu</translation>
+    </message>
+    <message>
+        <source>Returning Shows</source>
+        <translation>Sèries en emissió</translation>
+    </message>
+    <message>
+        <source>Seasonal Picks</source>
+        <translation>Seleccions de temporada</translation>
+    </message>
+    <message>
+        <source>Top Picks Today</source>
+        <translation>Millors recomanacions d&apos;avui</translation>
+    </message>
+    <message>
+        <source>Top Rated</source>
+        <translation>Els més valorats</translation>
+    </message>
+    <message>
+        <source>Trending on Server</source>
+        <translation>Tendències al servidor</translation>
+    </message>
+    <message>
+        <source>Trending This Week</source>
+        <translation>Tendències d&apos;aquesta setmana</translation>
+    </message>
 </context>
 </TS>
