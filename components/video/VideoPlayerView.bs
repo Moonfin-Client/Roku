@@ -2,6 +2,7 @@ import "pkg:/components/anime/animeMarkerWatch.bs"
 import "pkg:/components/video/watchPartyPlayer.bs"
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/Image.bs"
+import "pkg:/source/api/silo/SiloPlayback.bs"
 import "pkg:/source/enums/ColorPalette.bs"
 import "pkg:/source/enums/ImageType.bs"
 import "pkg:/source/enums/ItemType.bs"
@@ -33,6 +34,7 @@ import "pkg:/source/utils/playbackOverlay.bs"
 import "pkg:/source/utils/recordAiring.bs"
 import "pkg:/source/utils/seasonalEffects.bs"
 import "pkg:/source/utils/secondarySubtitle.bs"
+import "pkg:/source/utils/siloPlaybackControl.bs"
 import "pkg:/source/utils/trackMemory.bs"
 
 const REPLAY_RETRIES = 3
@@ -71,6 +73,15 @@ sub init()
     ' An administrator ending this playback on Silo closes the player
     m.endedOnServer = false
     m.global.observeFieldScoped("siloPlaybackEnded", "onSiloPlaybackEnded")
+
+    ' The Silo session the control lane follows, set when its stream is handed over, and the lane
+    ' this player hears commands from (see syncControlLane)
+    m.controlKey = ""
+    m.controlSession = ""
+    m.controlReplan = false
+    m.reloadStop = false
+    m.laneObserved = invalid
+    m.releasedLane = invalid
 
     ' Carries on through the rest of the queue, the way it does in the other clients
     m.subtitleOffset = m.global.queueManager.callFunc("getSubtitleOffset")
@@ -423,6 +434,7 @@ sub playQueueItem(move as string)
     end if
     m.top.unobserveField("state")
     m.top.control = VideoControl.STOP
+    letGoControlLane()
     m.global.sceneManager.callFunc("clearPreviousScene")
     m.global.queueManager.callFunc(move)
     m.global.queueManager.callFunc("playQueue")
@@ -432,6 +444,7 @@ end sub
 sub leaveForGroupItem()
     m.top.unobserveField("state")
     m.top.control = VideoControl.STOP
+    letGoControlLane()
     m.global.sceneManager.callFunc("clearPreviousScene")
 end sub
 
@@ -1360,7 +1373,6 @@ sub onPlaybackErrorDialogClosed(msg)
     sourceNode = msg.getRoSGNode()
     sourceNode.unobserveField("buttonSelected")
     sourceNode.unobserveField("wasClosed")
-
     m.global.sceneManager.callFunc("popScene")
 end sub
 
@@ -1384,7 +1396,7 @@ end sub
 
 ' Stops at once, so no reload or retry asks for the stream again, and says why once. A load that
 ' heard of the end before the player had a session names it as [endedSession]
-sub closeEndedOnServer(endedSession = "" as string)
+sub closeEndedOnServer(endedSession = "" as string, reason = "" as string)
     if m.endedOnServer then return
     m.endedOnServer = true
     m.global.unobserveFieldScoped("siloPlaybackEnded")
@@ -1410,10 +1422,218 @@ sub closeEndedOnServer(endedSession = "" as string)
         params.PlaySessionId = endedSession
     end if
     sendPlaystate("stop", params, true)
+    letGoControlLane()
     m.suppressStopReport = true
     m.top.control = VideoControl.STOP
-    showPlaybackErrorDialog(tr("Playback was ended on the Silo server."))
+    endedText = tr("Playback was ended on the Silo server.")
+    if reason <> "" then endedText = endedText + Chr(10) + reason
+    showPlaybackErrorDialog(endedText)
 end sub
+
+' ===== Silo playback control lane =====
+' The lane is Silo's control socket for the session this player streams (siloPlaybackControl.bs and
+' components/silo/SiloPlaybackControlTask). It follows the session on the server that session plays from.
+
+' The server the player's session lives on, as the lane's key: the item's own server, else the signed in one
+function controlLaneKey() as string
+    server = ""
+    identity = serverIdentityNow()
+    if type(identity) = "roAssociativeArray" then server = toString(identity.url ?? "")
+    if isValid(m.itemServerData) and isValidAndNotEmpty(m.itemServerData.serverUrl) then server = m.itemServerData.serverUrl
+    return siloPlaybackControl.ServerKey(server)
+end function
+
+' Whether the player plays this Silo session on this server. Taking the lane, every command and a replan
+' all ask this one question, so they can't disagree. The session is the one the stream came from, which a
+' replan keeps, so it stays true while a replan is in flight.
+function playsControlSession(serverKey as string, sessionId as string) as boolean
+    return siloPlaybackControl.StillPlays(m.controlKey, m.controlSession, serverKey, sessionId)
+end function
+
+function controlLaneSupported() as boolean
+    if not isValid(m.hasControlSocket)
+        ' bs:disable-next-line: 1129
+        m.hasControlSocket = type(CreateObject("roWebSocket")) = "roWebSocket"
+    end if
+    return m.hasControlSocket
+end function
+
+' Takes the lane for this session, or keeps the one that holds it. A lane for another session is let go
+' first. Its late commands still get their answers, since this player keeps hearing them.
+sub syncControlLane()
+    ' Playing again ends a reload, whether or not a lane follows it (a live channel's reload sends no stop report)
+    replanned = m.controlReplan = true
+    m.controlReplan = false
+    m.reloadStop = false
+    if not controlLaneSupported() or not playsFromSilo() then return
+    if m.controlKey = "" or m.controlSession = "" then return
+
+    lane = m.global.siloControlLane
+    if isValid(lane) and lane.active = true and not isReleasedLane(lane) and playsControlSession(siloPlaybackControl.ServerKey(lane.server), lane.sessionId)
+        ' A replan keeps the lane, and its retry asks again if the lane gave up on the session
+        if replanned then lane.retry = true
+        observeControlLane(lane)
+        return
+    end if
+    if isValid(lane) then lane.active = false
+
+    record = silo.PlaybackSessions()[m.controlSession]
+    if not isValid(record) or record.ended = true then return
+
+    lane = CreateObject("roSGNode", "SiloPlaybackControlTask")
+    lane.setFields({
+        server: record.server ?? m.controlKey,
+        account: record.account ?? "",
+        profileId: record.profileId ?? "",
+        sessionId: m.controlSession,
+        installationId: record.installationId ?? "",
+        appVersion: m.global.app.version ?? ""
+    })
+    observeControlLane(lane)
+    lane.active = true
+    lane.control = TaskControl.RUN
+    m.global.siloControlLane = lane
+end sub
+
+' Hears a lane's commands on this player, once
+sub observeControlLane(lane as object)
+    if isValid(m.laneObserved) and m.laneObserved.isSameNode(lane) then return
+    lane.observeField("command", "onLaneCommand")
+    m.laneObserved = lane
+end sub
+
+function isReleasedLane(lane as object) as boolean
+    return isValid(m.releasedLane) and m.releasedLane.isSameNode(lane)
+end function
+
+' Lets go of this session's lane once the player leaves it: a stop report that isn't a reload's, Back or a
+' remote stop, Next, an ended session, or the error dialog closing. The lane closes after its grace, and a
+' command still running gets its answer first.
+sub letGoControlLane()
+    if not m.global.hasField("siloControlLane") then return
+    lane = m.global.siloControlLane
+    if not isValid(lane) then return
+    if not playsControlSession(siloPlaybackControl.ServerKey(lane.server), lane.sessionId) then return
+    m.releasedLane = lane
+    lane.active = false
+end sub
+
+sub showSiloNotice(title as string, body as string)
+    banner = m.top.getScene().findNode("notificationBanner")
+    if not isValid(banner) then return
+    notice = { title: title, seconds: 8 }
+    if body <> "" then notice.body = body
+    banner.callFunc("enqueue", [notice])
+end sub
+
+' A command from the lane. It is acknowledged, run, then answered. Only one that plays this session runs.
+sub onLaneCommand(msg as object)
+    lane = msg.getRoSGNode()
+    cmd = msg.getData()
+    if not isValid(cmd) then return
+    ' A lane let go (here or by a sign-out), a player that is closing, or one Next has put another player over,
+    ' runs nothing: a stop would close the screen on top. It still answers, as not running.
+    if m.endedOnServer or lane.active <> true or isReleasedLane(lane) or not isOnScreen() or not playsControlSession(siloPlaybackControl.ServerKey(lane.server), cmd.sessionId)
+        lane.answer = { id: cmd.id, type: "result", error: "not_playing" }
+        return
+    end if
+
+    action = siloPlaybackControl.ActionOf(cmd.name, cmd.payload)
+    if not isValid(action)
+        lane.answer = { id: cmd.id, type: "result", error: "unsupported" }
+        return
+    end if
+    lane.answer = { id: cmd.id, type: "ack", error: "" }
+
+    refusal = "failed"
+    try
+        refusal = runControlAction(action)
+    catch e
+        diagnostics.Playback("Silo control command " + action.kind + " failed", diagnostics.LEVEL_WARN)
+    end try
+    lane.answer = { id: cmd.id, type: "result", error: refusal }
+    if refusal <> "" then return
+
+    ' Stop's reason and a terminate come once the result has gone, so the session's end isn't cut short
+    reason = cmd.reason ?? ""
+    try
+        if action.kind = "stop" and reason <> ""
+            showSiloNotice(tr("Playback was stopped on the Silo server."), reason)
+        else if action.kind = "terminate"
+            endOnServerCommand(reason)
+        end if
+    catch e
+        diagnostics.Playback("Silo control follow-up " + action.kind + " failed", diagnostics.LEVEL_WARN)
+    end try
+end sub
+
+' Runs a command on the player. Returns the refusal for its result, "" when it completed.
+function runControlAction(action as object) as string
+    if action.kind = "pause" or action.kind = "resume" or action.kind = "toggle"
+        ' In a watch party the room keeps play and pause and would undo a change made only here, so the
+        ' command goes to the room the way a viewer's key does, if the room lets this viewer ask
+        if isValid(m.wp)
+            ' While the room starts or runs a command of its own, the viewer's keys don't reach it either
+            if m.wp.holding or not m.wp.loaded or isValid(m.wp.pending) then return "failed"
+            ' A toggle follows the room, which decides who plays, not this player's own state
+            pause = action.kind = "pause" or (action.kind = "toggle" and m.wp.reference.playing)
+            if pause
+                if not wpRoomAllows("pause") or (m.wp.silo and not m.wp.attached) then return "failed"
+                wpRequest("pause", wpPosition(), true)
+            else
+                if not wpRoomAllows("play") or (m.wp.silo and not m.wp.attached) then return "failed"
+                wpRequest("play", m.wp.reference.position, false)
+            end if
+            return ""
+        end if
+        if action.kind = "pause"
+            m.top.control = VideoControl.PAUSE
+        else if action.kind = "resume"
+            m.top.control = VideoControl.RESUME
+        else if isStringEqual(m.top.state, MediaPlaybackState.PLAYING)
+            m.top.control = VideoControl.PAUSE
+        else
+            m.top.control = VideoControl.RESUME
+        end if
+        return ""
+    end if
+    if action.kind = "stop"
+        ' A reload still under way would otherwise play behind the screen the player closes to
+        abandonLoad()
+        m.startDelayTimer.control = "stop"
+        ' Back cancels Next Up before it closes the player; a stop from Silo has no key, so it does it here
+        m.nextUp.visible = false
+        m.nextUpTimer.control = TimerControl.STOP
+        m.bufferCheckTimer.control = "stop"
+        stopAsViewer()
+        ' Back closes the screen as the scene handles the key; a stop from Silo has no key, so it closes it here
+        m.global.sceneManager.callFunc("popScene")
+    else if action.kind = "message"
+        ' A title-only notice shows its title as the text
+        if action.title <> ""
+            showSiloNotice(action.title, action.text)
+        else
+            showSiloNotice(action.text, "")
+        end if
+    end if
+    return ""
+end function
+
+' Silo has ended the session, so the player stops at once and says why. The record is marked first, so the
+' stop and any reload treat it as ended.
+sub endOnServerCommand(reason as string)
+    ' Marking the record sets the global this player observes, whose handler would close without the reason
+    m.global.unobserveFieldScoped("siloPlaybackEnded")
+    record = silo.PlaybackSessions()[m.controlSession]
+    if isValid(record) and record.endedByServer <> true then silo.MarkEndedByServer(record)
+    closeEndedOnServer("", reason)
+end sub
+
+' Whether this player is the screen on top, the one a remote stop closes
+function isOnScreen() as boolean
+    active = m.global.sceneManager.callFunc("getActiveScene")
+    return isValid(active) and active.isSameNode(m.top)
+end function
 
 sub onPlaybackErrorButtonSelected(msg)
     sourceNode = msg.getRoSGNode()
@@ -1421,6 +1641,8 @@ sub onPlaybackErrorButtonSelected(msg)
 end sub
 
 sub showPlaybackErrorDialog(errorMessage as string)
+    ' The player is done once it shows an error, so a stop from Silo can't close it under the dialog
+    letGoControlLane()
     dialog = createObject("roSGNode", "Dialog")
     dialog.title = tr("Error During Playback")
     dialog.buttons = [tr("OK")]
@@ -1458,6 +1680,8 @@ sub retryPlaybackFromServer(startSeconds = -1 as float)
         m.global.queueManager.callFunc("setTopStartingPoint", Int(startSeconds * 1000) * 10000&)
     end if
 
+    ' Its stop report belongs to a reload, which keeps the control lane
+    m.reloadStop = true
     m.top.control = VideoControl.STOP
 
     m.LoadMetaDataTask.selectedSubtitleIndex = m.top.SelectedSubtitle
@@ -1471,6 +1695,8 @@ end sub
 ' and a fresh task carries this one.
 sub runLoad()
     if m.endedOnServer then return
+    ' A load is a replan or a reload once the lane exists; the next playing state says whether the lane holds
+    m.controlReplan = true
     if m.loadInFlight then replaceLoadTask()
     m.loadInFlight = true
     m.LoadMetaDataTask.observeField("content", "onVideoContentLoaded")
@@ -1680,6 +1906,19 @@ sub onVideoContentLoaded(event as object)
 
     m.top.content = videoContent[0].content
     m.top.PlaySessionId = videoContent[0].PlaySessionId
+    ' The session and server the control lane follows. Only a stream handed over with a session changes
+    ' them, so a load without one keeps the one it had
+    handedSession = toString(m.top.PlaySessionId ?? "")
+    handedKey = controlLaneKey()
+    if handedSession <> ""
+        m.controlSession = handedSession.Split("~")[0]
+        m.controlKey = handedKey
+    else if handedKey <> m.controlKey or not playsFromSilo()
+        ' Another server's stream, or one that isn't Silo's, isn't the lane's session any more
+        letGoControlLane()
+        m.controlSession = ""
+        m.controlKey = handedKey
+    end if
     m.top.videoId = videoContent[0].id
     m.top.container = videoContent[0].container
     m.top.mediaSourceId = videoContent[0].mediaSourceId
@@ -2712,6 +2951,7 @@ sub onState()
             ReportPlayback()
         end if
         m.playbackTimer.control = "start"
+        syncControlLane()
 
         ' The stop from a channel switch always lands before the next channel plays, so one that
         ' never came cant swallow a later stop
@@ -2834,6 +3074,16 @@ end function
 sub ReportPlayback(state = "update" as string)
 
     if m.top.position = invalid then return
+
+    ' A stop ends this session's control lane, unless it's a reload's (track, bitrate, seek, retry), which is
+    ' marked before its stop lands and uses the mark up, so any later stop lets the lane go
+    if state = "stop"
+        if m.reloadStop
+            m.reloadStop = false
+        else
+            letGoControlLane()
+        end if
+    end if
 
     params = playbackReportParams()
     if isValid(m.top.content) and isValid(m.top.content.live) and m.top.content.live
@@ -4416,6 +4666,8 @@ sub stopForReload()
         m.replacedLiveSession = m.liveSession
         m.liveSession = invalid
     end if
+    ' The stop report this sends belongs to a reload, which keeps the control lane
+    m.reloadStop = true
     m.top.control = VideoControl.STOP
 
     ' The stop never reaches the recovery, so the stream it watched would still look like one that
@@ -4468,6 +4720,9 @@ sub openGuide()
     abandonLiveRecovery("the viewer opened the guide")
     hideLiveFailedCard()
     closeCarousel()
+    ' The player closes here without a stop report of its own, so it lets its session's lane go while it
+    ' still plays that session
+    letGoControlLane()
     releaseLiveSessions()
     abandonLoad()
     m.top.findNode("liveProgramTimer").control = TimerControl.STOP
@@ -4634,34 +4889,40 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         end if
 
-        resetEmbyPreview()
-        sheets = []
-        for each sheetKey in m.sheetState
-            sheets.push(sheetKey.toInt())
-        end for
-        m.PreloadTrickplayImagesTask.videoID = m.top.id
-        m.PreloadTrickplayImagesTask.sheets = sheets
-        m.PreloadTrickplayImagesTask.method = "REMOVE"
-        m.PreloadTrickplayImagesTask.control = TaskControl.RUN
-
-        currentTimeTimer = m.clock.findNode("currentTimeTimer")
-        if isValid(currentTimeTimer) then currentTimeTimer.control = TimerControl.STOP
-
-        ' Leaving lets the channel go, and nothing the recovery held may touch the player again,
-        ' a load still under way included
-        abandonLiveRecovery("the viewer left the channel")
-        releaseLiveSessions()
-        if isValid(m.liveRecovery) then abandonLoad()
-
-        wpDetach(true)
-        m.global.syncPlayManager.callFunc("unregisterVideoView", m.top, "closed")
-        m.global.queueManager.callFunc("bypassNextPreferredAudioTrackIndexReset")
-        m.global.queueManager.callFunc("clear")
-        m.top.control = VideoControl.STOP
+        stopAsViewer()
     end if
 
     return false
 end function
+
+' Stops the player the way the viewer's Back does. A Silo stop from the control lane runs the same steps.
+sub stopAsViewer()
+    resetEmbyPreview()
+    sheets = []
+    for each sheetKey in m.sheetState
+        sheets.push(sheetKey.toInt())
+    end for
+    m.PreloadTrickplayImagesTask.videoID = m.top.id
+    m.PreloadTrickplayImagesTask.sheets = sheets
+    m.PreloadTrickplayImagesTask.method = "REMOVE"
+    m.PreloadTrickplayImagesTask.control = TaskControl.RUN
+
+    currentTimeTimer = m.clock.findNode("currentTimeTimer")
+    if isValid(currentTimeTimer) then currentTimeTimer.control = TimerControl.STOP
+
+    ' Leaving lets the channel go, and nothing the recovery held may touch the player again,
+    ' a load still under way included
+    abandonLiveRecovery("the viewer left the channel")
+    releaseLiveSessions()
+    if isValid(m.liveRecovery) then abandonLoad()
+
+    wpDetach(true)
+    m.global.syncPlayManager.callFunc("unregisterVideoView", m.top, "closed")
+    m.global.queueManager.callFunc("bypassNextPreferredAudioTrackIndexReset")
+    m.global.queueManager.callFunc("clear")
+    m.top.control = VideoControl.STOP
+    letGoControlLane()
+end sub
 
 sub resetEmbyPreview()
     if isValid(m.embyPreviewTask)

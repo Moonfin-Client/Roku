@@ -1,0 +1,115 @@
+import "pkg:/source/api/silo/SiloSession.bs"
+import "pkg:/source/api/silo/SiloPlayback.bs"
+import "pkg:/source/utils/siloPlaybackControl.bs"
+
+' The capability read and the single-use socket ticket of a playback session's control socket
+' (Silo's /api/v2/playback/sessions/.../control). The socket itself is in
+' components/silo/SiloPlaybackControlTask.bs, and the rules it follows are in utils/siloPlaybackControl.bs.
+'
+' Both calls go through silo.Call, so they carry the same headers and login as every Silo call.
+namespace silo
+    const PLAYBACK_CONTROL_BASE = "/api/v2/playback/sessions"
+
+    ' Whether this server lets the lane open: "yes", "no", or "error" for a read that failed (no answer, a
+    ' timeout, 429, a 5xx), which the lane retries with backoff instead of treating as off. Cached per server, since a session
+    ' asks again for every replan and every reconnect.
+    function PlaybackControlAvailable(server as string, account as string, profileId as string) as string
+        key = siloPlaybackControl.ServerKey(server)
+        cached = silo.PlaybackControlCached(key)
+        if cached <> invalid
+            if cached.available then return "yes"
+            return "no"
+        end if
+
+        answer = silo.Call(server, silo.PLAYBACK_CONTROL_BASE + "/control/capabilities", { account: account, profileId: profileId })
+        usable = false
+        if answer.ok then usable = siloPlaybackControl.CapsUsable(answer.data)
+        ' A 404 is an older server, which is kept as not available. Anything else that isn't usable
+        ' (allowed false, a starting server, a failed read) is asked again next time.
+        if siloPlaybackControl.CapsKeep(answer.status, usable)
+            silo.KeepPlaybackControl(key, usable)
+        end if
+        if usable then return "yes"
+        ' No answer, a timeout, a rate limit or a server error is asked again, like a refused ticket would be
+        if silo.RetryableStart(answer) then return "error"
+        return "no"
+    end function
+
+    ' The answer from the capability cache, or invalid. Ten minutes, as the lane's rules say.
+    function PlaybackControlCached(key as string) as dynamic
+        caps = silo.PlaybackControlCaps()
+        entry = caps[key]
+        if type(entry) <> "roAssociativeArray" then return invalid
+        if silo.NowSeconds() - (entry.at ?? 0) >= siloPlaybackControl.CAPS_TTL_SECONDS then return invalid
+        return { available: entry.available = true }
+    end function
+
+    sub KeepPlaybackControl(key as string, available as boolean)
+        caps = silo.PlaybackControlCaps()
+        caps[key] = { available: available, at: silo.NowSeconds() }
+        m.global.siloPlaybackControlCaps = caps
+    end sub
+
+    ' Read, change a copy, write back: a task can't change an associative array field in place
+    function PlaybackControlCaps() as object
+        if not m.global.hasField("siloPlaybackControlCaps") then m.global.addFields({ siloPlaybackControlCaps: {} })
+        caps = m.global.siloPlaybackControlCaps
+        if type(caps) <> "roAssociativeArray" then caps = {}
+        return caps
+    end function
+
+    ' Signing out of a server clears its cached capability read
+    sub ForgetPlaybackControlCaps(server as string)
+        key = siloPlaybackControl.ServerKey(server)
+        caps = silo.PlaybackControlCaps()
+        if caps.DoesExist(key)
+            caps.Delete(key)
+            m.global.siloPlaybackControlCaps = caps
+        end if
+    end sub
+
+    ' The ticket request's body. The installation is the session's own, not the device's.
+    function PlaybackControlTicketBody(installationId as string) as object
+        return { "installation_id": installationId }
+    end function
+
+    ' A ticket answer read as the lane needs it. ok is true only with a ticket and the protocol the
+    ' socket speaks; a refusal says how to treat a failed one. A 200 without a ticket, or with another
+    ' protocol, is a server the lane should ask again later, not one that refused.
+    function PlaybackControlTicketOf(answer as object) as object
+        result = { ok: false, ticket: "", maxConnectionSeconds: 0, refusal: "", retryAfter: 0 }
+        if answer.ok <> true
+            result.refusal = siloPlaybackControl.TicketRefusal(answer.status)
+            ' Silo asks never to be asked again sooner than its Retry-After (seconds)
+            if isValidAndNotEmpty(answer.retryAfter) then result.retryAfter = Val(toString(answer.retryAfter))
+            return result
+        end if
+        data = answer.data
+        if type(data) <> "roAssociativeArray" or data.protocol <> siloPlaybackControl.PROTOCOL
+            result.refusal = "retry"
+            return result
+        end if
+        if not isValidAndNotEmpty(data.ticket)
+            result.refusal = "retry"
+            return result
+        end if
+        maxSeconds = 0
+        if isValid(data.max_connection_seconds) then maxSeconds = Int(data.max_connection_seconds)
+        ' Without a limit the lane can't time its renewal, so it asks again later
+        if maxSeconds <= 0
+            result.refusal = "retry"
+            return result
+        end if
+        result.ok = true
+        result.ticket = data.ticket
+        result.maxConnectionSeconds = maxSeconds
+        return result
+    end function
+
+    ' A single-use ticket for one connection to a session's control socket. Each connect needs its own.
+    function PlaybackControlTicket(server as string, account as string, profileId as string, sessionId as string, installationId as string) as object
+        path = silo.PLAYBACK_CONTROL_BASE + "/" + sessionId.EncodeUriComponent() + "/control/ws-ticket"
+        answer = silo.Call(server, path, { method: "POST", body: silo.PlaybackControlTicketBody(installationId), account: account, profileId: profileId })
+        return silo.PlaybackControlTicketOf(answer)
+    end function
+end namespace
