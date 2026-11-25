@@ -8,7 +8,7 @@ import "pkg:/source/utils/parentalControls.bs"
 import "pkg:/source/utils/recentRows.bs"
 import "pkg:/source/utils/userViews.bs"
 
-const MEDIA_BAR_FIELDS = "Overview,People,Genres,CommunityRating,CriticRating,OfficialRating,ProductionYear,RunTimeTicks,ChildCount,ProviderIds,RemoteTrailers"
+const MEDIA_BAR_FIELDS = "Overview,People,Genres,CommunityRating,CriticRating,OfficialRating,ProductionYear,RunTimeTicks,ChildCount,ProviderIds,RemoteTrailers,DateCreated,DateLastMediaAdded,PremiereDate"
 
 sub init()
     m.top.functionName = "getMediaBarData"
@@ -16,6 +16,7 @@ end sub
 
 sub getMediaBarData()
     sourceType = LCase(m.top.sourceType ?? "random")
+    sortOrder = normalizeSortOrder(m.top.sortOrder)
     allowedCollectionTypes = getAllowedCollectionTypes()
     includeTypes = getAllowedIncludeTypes()
 
@@ -51,42 +52,120 @@ sub getMediaBarData()
     ' The dated sources read the newest titles instead, and one with nothing in its window falls
     ' back to the random draw. Library titles come first, so one an outside list repeats keeps its
     ' server item.
+    isDated = (sourceType = "recentlyadded" or sourceType = "recentlyreleased" or sourceType = "newreleases")
     pool = []
-    if sourceType = "recentlyadded" or sourceType = "recentlyreleased" or sourceType = "newreleases"
-        pool = readDatedSources(shuffleArray(parentIds), sourceType, includeTypes, excludedGenreNames)
+    if isDated
+        pool = readDatedSources(parentIds, sourceType, includeTypes, excludedGenreNames)
     end if
+    usedDatedPool = isDated and pool.count() > 0
     if pool.count() = 0 then pool = readSources(shuffleArray(parentIds), query, excludedGenreNames)
     ' A chart can hold hundreds of titles, so beside a library it gets as many places as the bar
     ' has slides
     externalItems = shuffleArray(filterAndDedupeItems(externalItems))
     if pool.count() > 0 and externalItems.count() > m.top.featuredCount then externalItems = externalItems.slice(0, m.top.featuredCount)
-    pool.append(externalItems)
-    pool = shuffleArray(filterAndDedupeItems(pool))
 
-    m.top.mediaBarData = { items: pickSlides(pool, m.top.featuredCount, excludedGenreNames) }
+    if usedDatedPool
+        pool = mergeDatedWithExternal(filterAndDedupeItems(pool), externalItems, m.top.featuredCount)
+    else
+        pool.append(externalItems)
+        pool = shuffleArray(filterAndDedupeItems(pool))
+    end if
+
+    picked = pickSlides(pool, m.top.featuredCount, excludedGenreNames)
+    m.top.mediaBarData = { items: sortSlides(picked, sortOrder) }
 end sub
 
-' Reads the sources six at a time in their shuffled order, and skips one still waiting for a slot
-' once there are twice as many usable titles as the bar shows. Blocked titles and excluded genres
-' are left out as they arrive, so they dont count toward that.
-function readSources(parentIds as object, query as object, excludedGenreNames as object, path = "/Items/" as string) as object
+' Keeps dated library picks in their relative order while interleaving external picks,
+' appending remaining library items at the end so pickSlides can backfill if an external
+' title turns out to have no backdrop or an excluded genre.
+function mergeDatedWithExternal(libraryPool as object, externalPool as object, wanted as integer) as object
+    if externalPool.count() = 0 then return libraryPool
+    if libraryPool.count() = 0 then return externalPool
+
+    dedupedAll = filterAndDedupeItems(appendCopy(libraryPool, externalPool))
+    libOnly = []
+    extOnly = []
+    for each item in dedupedAll
+        if isValid(item.External)
+            extOnly.push(item)
+        else
+            libOnly.push(item)
+        end if
+    end for
+    if extOnly.count() = 0 then return libOnly
+
+    targetExt = extOnly.count()
+    half = Int(wanted / 2)
+    if half < 1 then half = 1
+    if targetExt > half then targetExt = half
+
+    libKeep = wanted - targetExt
+    if libKeep < 0 then libKeep = 0
+    if libKeep > libOnly.count() then libKeep = libOnly.count()
+    extKeep = wanted - libKeep
+    if extKeep > extOnly.count() then extKeep = extOnly.count()
+
+    merged = []
+    maxLen = libKeep > extKeep ? libKeep : extKeep
+    for i = 0 to maxLen - 1
+        if i < libKeep then merged.push(libOnly[i])
+        if i < extKeep then merged.push(extOnly[i])
+    end for
+    for i = libKeep to libOnly.count() - 1
+        merged.push(libOnly[i])
+    end for
+    for i = extKeep to extOnly.count() - 1
+        merged.push(extOnly[i])
+    end for
+    return merged
+end function
+
+function appendCopy(first as object, second as object) as object
+    combined = []
+    for each item in first
+        combined.push(item)
+    end for
+    for each item in second
+        combined.push(item)
+    end for
+    return combined
+end function
+
+' Reads the sources six at a time. Random sources shuffle and stop once twice as many usable
+' titles are in hand; dated sources read every source and interleave one title per source in turn
+' so faster later sources cannot steal shared titles from earlier sources.
+function readSources(parentIds as object, query as object, excludedGenreNames as object, path = "/Items/" as string, dated = false as boolean) as object
     port = CreateObject("roMessagePort")
     running = {}
+    runningIndex = {}
+    batches = []
+    for i = 0 to parentIds.count() - 1
+        batches.push([])
+    end for
     nextSource = 0
     items = []
     seen = {}
     while true
-        while running.count() < 6 and nextSource < parentIds.count() and items.count() < m.top.featuredCount * 2
-            query.parentId = parentIds[nextSource]
+        while running.count() < 6 and nextSource < parentIds.count() and (dated or items.count() < m.top.featuredCount * 2)
+            srcIdx = nextSource
+            query.parentId = parentIds[srcIdx]
             nextSource++
             req = APIRequest(path, query)
             if req <> invalid
                 ' A Plex server is answered by its bridge, one source at a time
                 if plexUrls.Owns(req.GetUrl())
-                    keepFetched(getJson(req), items, seen, excludedGenreNames)
+                    if dated
+                        keepFetched(getJson(req), batches[srcIdx], {}, excludedGenreNames)
+                    else
+                        keepFetched(getJson(req), items, seen, excludedGenreNames)
+                    end if
                 else
                     req.setMessagePort(port)
-                    if siloStartGet(req) then running[req.GetIdentity().ToStr()] = req
+                    if siloStartGet(req)
+                        idKey = req.GetIdentity().ToStr()
+                        running[idKey] = req
+                        runningIndex[idKey] = srcIdx
+                    end if
                 end if
             end if
         end while
@@ -95,18 +174,54 @@ function readSources(parentIds as object, query as object, excludedGenreNames as
         ' A Silo request is answered at once, as a stand-in URL event
         msg = siloWait(30000, port)
         if not isUrlEvent(msg) then exit while
-        running.Delete(msg.GetSourceIdentity().ToStr())
+        idKey = msg.GetSourceIdentity().ToStr()
+        srcIdx = runningIndex[idKey]
+        running.Delete(idKey)
+        runningIndex.Delete(idKey)
 
-        if msg.GetResponseCode() = 200 then keepFetched(ParseJson(msg.GetString()), items, seen, excludedGenreNames)
+        if msg.GetResponseCode() = 200
+            if dated and isValid(srcIdx)
+                keepFetched(ParseJson(msg.GetString()), batches[srcIdx], {}, excludedGenreNames)
+            else
+                keepFetched(ParseJson(msg.GetString()), items, seen, excludedGenreNames)
+            end if
+        end if
     end while
-    return items
+
+    if not dated then return items
+
+    ' Interleave deterministically in source order, deduplicating across sources by turn
+    interleaved = []
+    cursors = []
+    for i = 0 to batches.count() - 1
+        cursors.push(0)
+    end for
+    progressed = true
+    while progressed
+        progressed = false
+        for sIdx = 0 to batches.count() - 1
+            batch = batches[sIdx]
+            while cursors[sIdx] < batch.count() and seen.DoesExist(batch[cursors[sIdx]].Id)
+                cursors[sIdx] = cursors[sIdx] + 1
+            end while
+            if cursors[sIdx] < batch.count()
+                item = batch[cursors[sIdx]]
+                cursors[sIdx] = cursors[sIdx] + 1
+                seen[item.Id] = true
+                interleaved.push(item)
+                progressed = true
+            end if
+        end for
+    end while
+    return interleaved
 end function
 
-' The newest titles of a dated source, read the way the random draw is. New Seasons & Episodes
-' asks for the episodes, since a series' own date is its first season's.
+' The newest titles of a dated source. New Seasons & Episodes asks for the episodes, since a
+' series' own date is its first season's, and carries the latest episode air/added dates onto
+' each hydrated series while preserving rank order.
 function readDatedSources(parentIds as object, sourceType as string, includeTypes as string, excludedGenreNames as object) as object
     query = { userId: m.top.userId, includeItemTypes: includeTypes, limit: 40, fields: MEDIA_BAR_FIELDS, personTypes: "Actor,GuestStar" }
-    if sourceType = "recentlyadded" then return withoutWatchedIfHidden(withBackdrops(readSources(parentIds, query, excludedGenreNames, "/Items/Latest")))
+    if sourceType = "recentlyadded" then return withoutWatchedIfHidden(withBackdrops(readSources(parentIds, query, excludedGenreNames, "/Items/Latest", true)))
 
     query.recursive = true
     query.sortBy = "PremiereDate"
@@ -116,7 +231,7 @@ function readDatedSources(parentIds as object, sourceType as string, includeType
     if sourceType = "recentlyreleased"
         query.maxPremiereDate = CreateObject("roDateTime").ToISOString()
         if m.top.hideWatched then query.filters = "IsUnplayed"
-        return withoutWatchedIfHidden(readSources(parentIds, query, excludedGenreNames))
+        return withoutWatchedIfHidden(readSources(parentIds, query, excludedGenreNames, "/Items/", true))
     end if
 
     ' Movies only, so nothing here, and the bar falls back to random titles
@@ -125,18 +240,140 @@ function readDatedSources(parentIds as object, sourceType as string, includeType
     now = CreateObject("roDateTime").AsSeconds()
     since = CreateObject("roDateTime")
     since.FromSeconds(now - days * 86400)
-    episodeQuery = { userId: m.top.userId, includeItemTypes: "Episode", recursive: true, sortBy: "PremiereDate", sortOrder: "Descending", minPremiereDate: since.ToISOString(), limit: 300 }
+    episodeQuery = { userId: m.top.userId, includeItemTypes: "Episode", recursive: true, sortBy: "PremiereDate", sortOrder: "Descending", minPremiereDate: since.ToISOString(), limit: 300, fields: "DateCreated" }
     seriesIds = []
-    for each episode in mediaBarNewRelease.RecentlyAired(readSources(parentIds, episodeQuery, []), now, days)
+    latestAired = {}
+    latestAdded = {}
+    for each episode in mediaBarNewRelease.RecentlyAired(readSources(parentIds, episodeQuery, [], "/Items/", true), now, days)
         seriesId = toString(episode.LookupCI("SeriesId"))
-        if seriesId <> "" and not inArray(seriesIds, seriesId) then seriesIds.push(seriesId)
-        if seriesIds.count() >= 40 then exit for
+        if seriesId <> ""
+            if not inArray(seriesIds, seriesId) and seriesIds.count() < 40 then seriesIds.push(seriesId)
+            epPremiere = toString(episode.LookupCI("PremiereDate"))
+            if isServerDate(epPremiere)
+                epSec = parseIsoSeconds(epPremiere)
+                if not latestAired.DoesExist(seriesId) or epSec > latestAired[seriesId].sec
+                    latestAired[seriesId] = { sec: epSec, iso: epPremiere }
+                end if
+            end if
+            epAdded = toString(episode.LookupCI("DateCreated"))
+            if isServerDate(epAdded)
+                addSec = parseIsoSeconds(epAdded)
+                if not latestAdded.DoesExist(seriesId) or addSec > latestAdded[seriesId].sec
+                    latestAdded[seriesId] = { sec: addSec, iso: epAdded }
+                end if
+            end if
+        end if
     end for
     if seriesIds.count() = 0 then return []
 
     items = []
     keepFetched(getJson(APIRequest("/Items/", { userId: m.top.userId, ids: seriesIds.Join(","), fields: MEDIA_BAR_FIELDS, personTypes: "Actor,GuestStar" })), items, {}, excludedGenreNames)
-    return withBackdrops(items)
+    byId = {}
+    for each item in withBackdrops(items)
+        itemId = toString(item.LookupCI("Id"))
+        if latestAired.DoesExist(itemId) then item._effectivePremiereDate = latestAired[itemId].iso
+        if latestAdded.DoesExist(itemId) then item._effectiveDateCreated = latestAdded[itemId].iso
+        byId[itemId] = item
+    end for
+    ordered = []
+    for each sid in seriesIds
+        if byId.DoesExist(sid) then ordered.push(byId[sid])
+    end for
+    return ordered
+end function
+
+function normalizeSortOrder(value as dynamic) as string
+    raw = LCase(toString(value).Trim())
+    if raw = "random" then return "random"
+    if raw = "dateaddeddesc" then return "dateAddedDesc"
+    if raw = "dateaddedasc" then return "dateAddedAsc"
+    if raw = "releasedatedesc" then return "releaseDateDesc"
+    if raw = "releasedateasc" then return "releaseDateAsc"
+    return "default"
+end function
+
+function parseIsoSeconds(iso as dynamic) as integer
+    if not isServerDate(iso) then return 0
+    dt = CreateObject("roDateTime")
+    dt.FromISO8601String(Left(iso, 19) + "Z")
+    return dt.AsSeconds()
+end function
+
+function dateAddedSecondsOf(item as object) as integer
+    eff = parseIsoSeconds(item.LookupCI("_effectiveDateCreated"))
+    lastMedia = parseIsoSeconds(item.LookupCI("DateLastMediaAdded"))
+    if eff > 0 and eff >= lastMedia then return eff
+    if lastMedia > 0 then return lastMedia
+    return parseIsoSeconds(item.LookupCI("DateCreated"))
+end function
+
+function releaseDateSecondsOf(item as object) as integer
+    eff = parseIsoSeconds(item.LookupCI("_effectivePremiereDate"))
+    if eff > 0 then return eff
+    premiere = parseIsoSeconds(item.LookupCI("PremiereDate"))
+    if premiere > 0 then return premiere
+    yearVal = item.LookupCI("ProductionYear")
+    if isValid(yearVal)
+        yearNum = Val(yearVal.toStr())
+        if yearNum > 0
+            dt = CreateObject("roDateTime")
+            dt.FromISO8601String(`${Int(yearNum).toStr()}-01-01T00:00:00Z`)
+            return dt.AsSeconds()
+        end if
+    end if
+    return 0
+end function
+
+function compareSlideDates(a as integer, b as integer, descending as boolean) as integer
+    if a = 0 and b = 0 then return 0
+    if a = 0 then return 1
+    if b = 0 then return -1
+    if a = b then return 0
+    if descending then return (b > a) ? 1 : -1
+    return (a > b) ? 1 : -1
+end function
+
+' Re-orders the already-selected slides according to mediaBarSortOrder.
+' "default" leaves the selected source's order untouched.
+function sortSlides(slides as object, sortOrder as string) as object
+    if slides.count() < 2 or sortOrder = "default" then return slides
+    if sortOrder = "random" then return shuffleArray(slides)
+
+    descending = (sortOrder = "dateAddedDesc" or sortOrder = "releaseDateDesc")
+    byDateAdded = (sortOrder = "dateAddedDesc" or sortOrder = "dateAddedAsc")
+
+    ordered = []
+    for each s in slides
+        ordered.push(s)
+    end for
+
+    ' Insertion sort (stable, fast for <= 50 slides)
+    for i = 1 to ordered.count() - 1
+        current = ordered[i]
+        j = i - 1
+        while j >= 0 and shouldSwapSlides(ordered[j], current, byDateAdded, descending)
+            ordered[j + 1] = ordered[j]
+            j = j - 1
+        end while
+        ordered[j + 1] = current
+    end for
+    return ordered
+end function
+
+function shouldSwapSlides(leftItem as object, rightItem as object, byDateAdded as boolean, descending as boolean) as boolean
+    pA = byDateAdded ? dateAddedSecondsOf(leftItem) : releaseDateSecondsOf(leftItem)
+    pB = byDateAdded ? dateAddedSecondsOf(rightItem) : releaseDateSecondsOf(rightItem)
+    cmp = compareSlideDates(pA, pB, descending)
+    if cmp <> 0 then return cmp > 0
+
+    sA = byDateAdded ? releaseDateSecondsOf(leftItem) : dateAddedSecondsOf(leftItem)
+    sB = byDateAdded ? releaseDateSecondsOf(rightItem) : dateAddedSecondsOf(rightItem)
+    cmp2 = compareSlideDates(sA, sB, descending)
+    if cmp2 <> 0 then return cmp2 > 0
+
+    nameA = LCase(toString(leftItem.LookupCI("Name")))
+    nameB = LCase(toString(rightItem.LookupCI("Name")))
+    return nameA > nameB
 end function
 
 ' The Recently Added and Recently Released pools follow Hide Watched like their rows
