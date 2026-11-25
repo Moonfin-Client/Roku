@@ -3,7 +3,9 @@ import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/playbackOverlay.bs"
 import "pkg:/source/utils/themeChrome.bs"
 
-const OFFSET_STEP_MS = 100
+' A held stepper waits a moment before it repeats, so a single press stays a single step
+const REPEAT_DELAY_SECONDS = 0.45
+const REPEAT_EVERY_SECONDS = 0.1
 
 ' The buttons in the order focus reaches them. The two steppers share the top row.
 const FOCUS_DECREASE = 0
@@ -22,6 +24,10 @@ const PANEL_HEIGHT = 399
 const NARROW_WIDTH = 600
 const WIDE_WIDTH = 900
 const PANEL_PAD = 40
+' The docked bar: one row of title, steppers and Reset, above the bottom of the picture
+const DOCKED_WIDTH = 1400
+const DOCKED_HEIGHT = 170
+const DOCKED_BOTTOM_GAP = 60
 
 const TIMELINE_WINDOW_SECONDS = 10
 const RULER_HEIGHT = 26
@@ -49,6 +55,9 @@ sub init()
     m.track = m.top.findNode("track")
     m.bars = m.top.findNode("bars")
     m.playhead = m.top.findNode("playhead")
+
+    m.repeatTimer = m.top.findNode("repeatTimer")
+    m.repeatTimer.observeField("fire", "onRepeat")
 
     m.top.observeField("visible", "onVisibleChanged")
     layoutPanel()
@@ -83,6 +92,16 @@ end sub
 
 ' Narrow by itself, and wide with the timeline under the steppers when there are cues to show
 sub layoutPanel()
+    docked = m.top.docked
+    m.top.findNode("scrim").visible = not docked
+    m.top.findNode("close").visible = not docked
+    if docked
+        layoutDocked()
+        return
+    end if
+    m.top.findNode("title").horizAlign = "center"
+    m.top.findNode("title").translation = [PANEL_PAD, 40]
+
     wide = isValidAndNotEmpty(m.top.cues)
     m.panelWidth = NARROW_WIDTH
     shift = 0
@@ -119,6 +138,39 @@ sub layoutPanel()
     m.bars.clippingRect = [2, 2, m.trackWidth - 4, TRACK_HEIGHT - 4]
     m.playhead.height = TRACK_HEIGHT
     drawTimeline()
+end sub
+
+sub onTitleChanged()
+    title = m.top.title
+    if title = "" then title = tr("Subtitle Offset")
+    m.top.findNode("title").text = title
+end sub
+
+' Title on the left, the steppers in the middle and Reset on the right, in a bar near the bottom
+sub layoutDocked()
+    m.panelWidth = DOCKED_WIDTH
+    for each id in ["panelBg", "panelBorder"]
+        m.top.findNode(id).width = DOCKED_WIDTH
+        m.top.findNode(id).height = DOCKED_HEIGHT
+    end for
+    m.top.findNode("panel").translation = [(1920 - DOCKED_WIDTH) / 2, 1080 - DOCKED_HEIGHT - DOCKED_BOTTOM_GAP]
+
+    title = m.top.findNode("title")
+    title.horizAlign = "left"
+    title.width = 420
+    title.translation = [PANEL_PAD, (DOCKED_HEIGHT - 48) / 2]
+
+    stepperTop = (DOCKED_HEIGHT - 80) / 2
+    left = (DOCKED_WIDTH - 400) / 2
+    m.top.findNode("decrease").translation = [left, stepperTop]
+    m.top.findNode("value").translation = [left + 100, stepperTop]
+    m.top.findNode("increase").translation = [left + 320, stepperTop]
+
+    placeButton("reset", tr("Reset"), 20, 30, 15, 0)
+    reset = m.top.findNode("reset")
+    bounds = m.top.findNode("resetLabel")
+    reset.translation = [DOCKED_WIDTH - bounds.width - PANEL_PAD, (DOCKED_HEIGHT - bounds.height) / 2]
+    m.timeline.visible = false
 end sub
 
 sub onOffsetChanged()
@@ -213,26 +265,39 @@ function pooledBar(index as integer) as object
 end function
 
 sub onVisibleChanged()
-    if not m.top.visible then return
+    if not m.top.visible
+        stopRepeat()
+        ' A hidden panel that kept focus would take the remote's keys from the player behind it
+        if m.top.isInFocusChain() then m.top.setFocus(false)
+        return
+    end if
 
     layoutPanel()
     m.focusIndex = FOCUS_RESET
+    if m.top.docked then m.focusIndex = m.lastStepper
     m.lastStepper = FOCUS_DECREASE
     drawFocus()
     m.top.setFocus(true)
 end sub
 
 ' 0.0s, +0.3s or -1.2s
+' Tenths of a second for steps of a tenth or more, and hundredths for finer ones
 sub drawValue()
-    tenths = Int(m.top.offset / OFFSET_STEP_MS)
     sign = ""
-    if tenths > 0 then sign = "+"
-    if tenths < 0 then sign = "-"
+    if m.top.offset > 0 then sign = "+"
+    if m.top.offset < 0 then sign = "-"
 
-    size = Int(Abs(tenths))
-    whole = Int(size / 10)
-    fraction = size - (whole * 10)
-    m.top.findNode("value").text = `${sign}${whole.toStr()}.${fraction.toStr()}s`
+    size = Abs(m.top.offset)
+    whole = Int(size / 1000)
+    if m.top.step >= 100
+        fraction = Int((size - whole * 1000) / 100)
+        m.top.findNode("value").text = `${sign}${whole.toStr()}.${fraction.toStr()}s`
+        return
+    end if
+    fraction = Int((size - whole * 1000) / 10)
+    padding = ""
+    if fraction < 10 then padding = "0"
+    m.top.findNode("value").text = `${sign}${whole.toStr()}.${padding}${fraction.toStr()}s`
 end sub
 
 sub drawFocus()
@@ -269,14 +334,37 @@ end sub
 
 sub activate()
     if m.focusIndex = FOCUS_DECREASE
-        stepOffset(-OFFSET_STEP_MS)
+        stepOffset(-m.top.step)
     else if m.focusIndex = FOCUS_INCREASE
-        stepOffset(OFFSET_STEP_MS)
+        stepOffset(m.top.step)
     else if m.focusIndex = FOCUS_RESET
         m.top.offset = 0
     else
         m.top.closed = true
     end if
+end sub
+
+' Starts stepping again and again while OK stays down on a stepper
+sub startRepeat()
+    if m.focusIndex <> FOCUS_DECREASE and m.focusIndex <> FOCUS_INCREASE then return
+    m.repeatTimer.duration = REPEAT_DELAY_SECONDS
+    m.repeatTimer.control = "start"
+end sub
+
+sub stopRepeat()
+    m.repeatTimer.control = "stop"
+end sub
+
+sub onRepeat()
+    if not m.top.visible
+        stopRepeat()
+        return
+    end if
+    if m.repeatTimer.duration <> REPEAT_EVERY_SECONDS
+        m.repeatTimer.duration = REPEAT_EVERY_SECONDS
+        m.repeatTimer.control = "start"
+    end if
+    activate()
 end sub
 
 sub stepOffset(delta as integer)
@@ -285,14 +373,36 @@ sub stepOffset(delta as integer)
     m.top.offset = offset
 end sub
 
+function dockedNeighbour(right as boolean) as integer
+    row = [FOCUS_DECREASE, FOCUS_INCREASE, FOCUS_RESET]
+    for i = 0 to row.count() - 1
+        if row[i] = m.focusIndex
+            if right and i < row.count() - 1 then return row[i + 1]
+            if not right and i > 0 then return row[i - 1]
+            return m.focusIndex
+        end if
+    end for
+    return FOCUS_DECREASE
+end function
+
 ' Focus stays inside the panel, and Back is the way out
 function onKeyEvent(key as string, press as boolean) as boolean
-    if not press then return true
+    if not press
+        if key = KeyCode.OK then stopRepeat()
+        return true
+    end if
+    stopRepeat()
 
     if key = KeyCode.BACK
         m.top.closed = true
     else if key = KeyCode.OK
         activate()
+        startRepeat()
+    else if m.top.docked and (key = KeyCode.LEFT or key = KeyCode.RIGHT)
+        ' The docked bar is one row: minus, plus, Reset
+        moveFocus(dockedNeighbour(key = KeyCode.RIGHT))
+    else if m.top.docked
+        ' Nothing above or below it
     else if key = KeyCode.LEFT and m.focusIndex = FOCUS_INCREASE
         moveFocus(FOCUS_DECREASE)
     else if key = KeyCode.RIGHT and m.focusIndex = FOCUS_DECREASE
