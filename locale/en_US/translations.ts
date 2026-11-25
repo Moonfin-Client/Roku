@@ -7179,6 +7179,54 @@
         <translation>Hide the movie or episode descriptive text.</translation>
     </message>
     <message>
+        <source>Toggle Media Description Visibility</source>
+        <translation>Toggle Media Description Visibility</translation>
+    </message>
+    <message>
+        <source>Hide media descriptions from various detail pages.</source>
+        <translation>Hide media descriptions from various detail pages.</translation>
+    </message>
+    <message>
+        <source>Hide Movie Description</source>
+        <translation>Hide Movie Description</translation>
+    </message>
+    <message>
+        <source>Hide descriptive text on movie details pages.</source>
+        <translation>Hide descriptive text on movie details pages.</translation>
+    </message>
+    <message>
+        <source>Hide Show Description</source>
+        <translation>Hide Show Description</translation>
+    </message>
+    <message>
+        <source>Hide descriptive text on TV show details pages.</source>
+        <translation>Hide descriptive text on TV show details pages.</translation>
+    </message>
+    <message>
+        <source>Hide Season Description</source>
+        <translation>Hide Season Description</translation>
+    </message>
+    <message>
+        <source>Hide descriptive text on season details pages.</source>
+        <translation>Hide descriptive text on season details pages.</translation>
+    </message>
+    <message>
+        <source>Hide Episode Description</source>
+        <translation>Hide Episode Description</translation>
+    </message>
+    <message>
+        <source>Hide descriptive text on episode details pages.</source>
+        <translation>Hide descriptive text on episode details pages.</translation>
+    </message>
+    <message>
+        <source>Hide Collection Description</source>
+        <translation>Hide Collection Description</translation>
+    </message>
+    <message>
+        <source>Hide descriptive text on collection details pages.</source>
+        <translation>Hide descriptive text on collection details pages.</translation>
+    </message>
+    <message>
         <source>Home Screen Backdrop</source>
         <translation>Home Screen Backdrop</translation>
     </message>
