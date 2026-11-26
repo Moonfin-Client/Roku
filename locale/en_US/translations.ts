@@ -11330,5 +11330,35 @@
         <extracomment>Title of a row a Silo server offers for Home</extracomment>
         <translation>Trending This Week</translation>
     </message>
+    <message>
+        <source>Order in which selected media bar slides are displayed.</source>
+        <translation>Order in which selected media bar slides are displayed.</translation>
+        <extracomment>Settings Menu - Description for Media Bar Sort Order</extracomment>
+    </message>
+    <message>
+        <source>Source Default</source>
+        <translation>Source Default</translation>
+        <extracomment>Media Bar Sort Order option - keep the order chosen by the selected source</extracomment>
+    </message>
+    <message>
+        <source>Date Added (Newest First)</source>
+        <translation>Date Added (Newest First)</translation>
+        <extracomment>Media Bar Sort Order option - newest added to library first</extracomment>
+    </message>
+    <message>
+        <source>Date Added (Oldest First)</source>
+        <translation>Date Added (Oldest First)</translation>
+        <extracomment>Media Bar Sort Order option - oldest added to library first</extracomment>
+    </message>
+    <message>
+        <source>Release Date (Newest First)</source>
+        <translation>Release Date (Newest First)</translation>
+        <extracomment>Media Bar Sort Order option - newest release or air date first</extracomment>
+    </message>
+    <message>
+        <source>Release Date (Oldest First)</source>
+        <translation>Release Date (Oldest First)</translation>
+        <extracomment>Media Bar Sort Order option - oldest release or air date first</extracomment>
+    </message>
 </context>
 </TS>

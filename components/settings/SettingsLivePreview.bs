@@ -217,6 +217,7 @@ sub drawScene(state as object)
         m.calendar.callFunc("calendarLoad", m.calendarShared)
         preview.screen = m.calendar
     end if
+    if isValid(config.rowItems) then preview.rowItems = config.rowItems
     preview.items = config.items
     if isValid(config.effect)
         m.effect = m.holder.createChild("SeasonalEffects")
@@ -317,12 +318,13 @@ function sceneConfig(state as object) as object
     hideHome = values["ui.home.hideMediaDescription"] = "true"
     if hideHome then items = withoutField(items, "overview")
     variant = hideHome.ToStr()
-    if focusKey = "ui.home.mediaBarMode" or focusKey = "ui.overlayColor" or focusKey = "ui.overlayOpacity" or Left(focusKey, 20) = "ui.mediaBar.ratings." or focusKey = "ui.home.mediaBarNewReleaseBanner" or focusKey = "ui.home.mediaBarNewReleaseDays" or focusKey = "ui.home.mediaBarRowPeek" or focusKey = "ui.home.featuredMediaItems"
+    if focusKey = "ui.home.mediaBarMode" or focusKey = "ui.overlayColor" or focusKey = "ui.overlayOpacity" or Left(focusKey, 20) = "ui.mediaBar.ratings." or focusKey = "ui.home.mediaBarNewReleaseBanner" or focusKey = "ui.home.mediaBarNewReleaseDays" or focusKey = "ui.home.mediaBarRowPeek" or focusKey = "ui.home.featuredMediaItems" or focusKey = "ui.home.mediaBarSortOrder"
         opacity = -1.0
         if values["ui.overlayOpacity"] <> "" then opacity = Val(values["ui.overlayOpacity"])
         mode = values["ui.home.mediaBarMode"] ?? "moonfin"
         pages = (values["ui.home.featuredMediaItems"] ?? "").ToInt()
         if pages <= 0 then pages = 15
+        sortOrder = values["ui.home.mediaBarSortOrder"] ?? "default"
         fields = { mode: mode, overlayColor: values["ui.overlayColor"] ?? "", overlayOpacity: opacity, ratings: ratingsFields("mediaBar", sampleItem(false), false), pages: pages }
         ' Peek Home Rows leaves the banner and no bar alone, as on Home
         fields.rowPeek = values["ui.home.mediaBarRowPeek"] = "true" and not inArray(["banner", "off"], mode)
@@ -331,8 +333,14 @@ function sceneConfig(state as object) as object
         if isValid(peek) then fields.peek = peek
         days = (values["ui.home.mediaBarNewReleaseDays"] ?? "30").ToInt()
         banner = values["ui.home.mediaBarNewReleaseBanner"] <> "false" and sampleReleaseShows(days, CreateObject("roDateTime").AsSeconds())
-        if banner then items = withNewReleaseSample(items)
-        return { component: "SetupMediaBarPreview", fields: fields, items: items, variant: variant + banner.ToStr() }
+        rowItems = invalid
+        if focusKey = "ui.home.mediaBarSortOrder"
+            rowItems = items
+            items = sortPreviewItems(items, sortOrder)
+        else if banner
+            items = withNewReleaseSample(items)
+        end if
+        return { component: "SetupMediaBarPreview", fields: fields, items: items, rowItems: rowItems, variant: variant + banner.ToStr() + (focusKey = "ui.home.mediaBarSortOrder" ? sortOrder : "") }
     end if
     ' The library order shows on the bar while it lists each library, and on My Media otherwise
     librariesOnBar = focusKey = "libraries.order" and values["navbar.show_libraries_individually"] = "true"
@@ -858,6 +866,69 @@ function withNewReleaseSample(items as object) as object
         end if
     end for
     return items
+end function
+
+' Orders the preview's sample slides by the sort option being tried so switching options visibly
+' updates the Media Bar preview.
+function sortPreviewItems(items as object, sortOrder as string) as object
+    if items.count() < 2 or sortOrder = "default" or sortOrder = "" then return items
+    if sortOrder = "random"
+        ' Deterministic alternate order so Random looks distinct from Source Default without
+        ' jittering on unrelated redraws.
+        rotated = []
+        shift = Int(items.count() / 2)
+        for i = 0 to items.count() - 1
+            rotated.push(items[(i + shift) mod items.count()])
+        end for
+        return rotated
+    end if
+
+    descending = (sortOrder = "dateAddedDesc" or sortOrder = "releaseDateDesc")
+    byDateAdded = (sortOrder = "dateAddedDesc" or sortOrder = "dateAddedAsc")
+    entries = []
+    for each item in items
+        addedKey = isServerDate(item.dateCreated) ? Left(item.dateCreated, 19) : ""
+        releaseKey = isServerDate(item.premiereDate) ? Left(item.premiereDate, 10) : (isValidAndNotEmpty(item.year) ? Right("000" + item.year, 4) + "-01-01" : "")
+        entries.push({
+            item: item,
+            primary: byDateAdded ? addedKey : releaseKey,
+            secondary: byDateAdded ? releaseKey : addedKey,
+            name: LCase(toString(item.title))
+        })
+    end for
+
+    for i = 1 to entries.count() - 1
+        current = entries[i]
+        j = i - 1
+        while j >= 0 and previewEntryAfter(entries[j], current, descending)
+            entries[j + 1] = entries[j]
+            j = j - 1
+        end while
+        entries[j + 1] = current
+    end for
+
+    ordered = []
+    for each entry in entries
+        ordered.push(entry.item)
+    end for
+    return ordered
+end function
+
+function previewEntryAfter(leftEntry as object, rightEntry as object, descending as boolean) as boolean
+    cmp = previewCompareKeys(leftEntry.primary, rightEntry.primary, descending)
+    if cmp <> 0 then return cmp > 0
+    cmp2 = previewCompareKeys(leftEntry.secondary, rightEntry.secondary, descending)
+    if cmp2 <> 0 then return cmp2 > 0
+    return leftEntry.name > rightEntry.name
+end function
+
+function previewCompareKeys(a as string, b as string, descending as boolean) as integer
+    if a = "" and b = "" then return 0
+    if a = "" then return 1
+    if b = "" then return -1
+    if a = b then return 0
+    if descending then return (b > a) ? 1 : -1
+    return (a > b) ? 1 : -1
 end function
 
 ' The sample title's own scores. An episode has no critic score.
