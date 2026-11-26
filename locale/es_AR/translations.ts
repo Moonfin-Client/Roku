@@ -9549,5 +9549,101 @@
         <source>Top Rated TV</source>
         <translation>Series mejor puntuadas</translation>
     </message>
+    <message>
+        <source>Because You Watched</source>
+        <translation>Porque viste</translation>
+    </message>
+    <message>
+        <source>Hidden Gems</source>
+        <translation>Joyas ocultas</translation>
+    </message>
+    <message>
+        <source>Next in Your Series</source>
+        <translation>Siguiente en tus series</translation>
+    </message>
+    <message>
+        <source>Profiles Like You Enjoyed</source>
+        <translation>Perfiles como el tuyo disfrutaron</translation>
+    </message>
+    <message>
+        <source>Random Picks</source>
+        <translation>Selección al azar</translation>
+    </message>
+    <message>
+        <source>Recently Added Audiobooks</source>
+        <translation>Audiolibros agregados recientemente</translation>
+    </message>
+    <message>
+        <source>Recently Added Ebooks</source>
+        <translation>Libros electrónicos agregados recientemente</translation>
+    </message>
+    <message>
+        <source>Recently Added in %1</source>
+        <translation>Agregado recientemente en %1</translation>
+    </message>
+    <message>
+        <source>Recently Added Manga</source>
+        <translation>Manga agregado recientemente</translation>
+    </message>
+    <message>
+        <source>Recently Added Movies</source>
+        <translation>Películas agregadas recientemente</translation>
+    </message>
+    <message>
+        <source>Recently Added TV</source>
+        <translation>Series agregadas recientemente</translation>
+    </message>
+    <message>
+        <source>Recently Released Audiobooks</source>
+        <translation>Audiolibros estrenados recientemente</translation>
+    </message>
+    <message>
+        <source>Recently Released Ebooks</source>
+        <translation>Libros electrónicos publicados recientemente</translation>
+    </message>
+    <message>
+        <source>Recently Released Episodes in %1</source>
+        <translation>Episodios estrenados recientemente en %1</translation>
+    </message>
+    <message>
+        <source>Recently Released in %1</source>
+        <translation>Estrenado recientemente en %1</translation>
+    </message>
+    <message>
+        <source>Recently Released Manga</source>
+        <translation>Manga publicado recientemente</translation>
+    </message>
+    <message>
+        <source>Recently Released Movies</source>
+        <translation>Películas estrenadas recientemente</translation>
+    </message>
+    <message>
+        <source>Recommended for You</source>
+        <translation>Recomendado para vos</translation>
+    </message>
+    <message>
+        <source>Returning Shows</source>
+        <translation>Series que regresan</translation>
+    </message>
+    <message>
+        <source>Seasonal Picks</source>
+        <translation>Selección de temporada</translation>
+    </message>
+    <message>
+        <source>Top Picks Today</source>
+        <translation>Las mejores elecciones de hoy</translation>
+    </message>
+    <message>
+        <source>Top Rated</source>
+        <translation>Mejor calificadas</translation>
+    </message>
+    <message>
+        <source>Trending on Server</source>
+        <translation>Tendencia en el servidor</translation>
+    </message>
+    <message>
+        <source>Trending This Week</source>
+        <translation>Tendencia esta semana</translation>
+    </message>
 </context>
 </TS>
