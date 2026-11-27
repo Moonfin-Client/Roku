@@ -580,7 +580,7 @@
     </message>
     <message>
         <source>(Dialog will close automatically)</source>
-        <translation>(Dialog will close automatically)</translation>
+        <translation>(Dialogue will close automatically)</translation>
     </message>
     <message>
         <source>There was an error authenticating via Quick Connect.</source>
@@ -3301,7 +3301,7 @@
     </message>
     <message>
         <source>Text Fill Color</source>
-        <translation>Text Fill Color</translation>
+        <translation>Text Fill Colour</translation>
     </message>
     <message>
         <source>White</source>
@@ -3365,7 +3365,7 @@
     </message>
     <message>
         <source>Background Color</source>
-        <translation>Background Color</translation>
+        <translation>Background Colour</translation>
     </message>
     <message>
         <source>Separate HDR Style</source>
@@ -4746,6 +4746,182 @@
     <message>
         <source>Recently Released Episodes</source>
         <translation>Recently Released Episodes</translation>
+    </message>
+    <message>
+        <source>Favorites you haven&apos;t played lately</source>
+        <translation>Favourites you haven&apos;t played lately</translation>
+    </message>
+    <message>
+        <source>My shows keeps the series you favorited or started watching</source>
+        <translation>My shows keeps the series you favourited or started watching</translation>
+    </message>
+    <message>
+        <source>Favorites Row</source>
+        <translation>Favourites Row</translation>
+    </message>
+    <message>
+        <source>Custom rows from your favorite lists</source>
+        <translation>Custom rows from your favourite lists</translation>
+    </message>
+    <message>
+        <source>Add To Favorites</source>
+        <translation>Add To Favourites</translation>
+    </message>
+    <message>
+        <source>Remove From Favorites</source>
+        <translation>Remove From Favourites</translation>
+    </message>
+    <message>
+        <source>Settings relating to the favorites row on the home screen.</source>
+        <translation>Settings relating to the favourites row on the home screen.</translation>
+    </message>
+    <message>
+        <source>No favorites found</source>
+        <translation>No favourites found</translation>
+    </message>
+    <message>
+        <source>{0} favorites sorted by {1}</source>
+        <translation>{0} favourites sorted by {1}</translation>
+    </message>
+    <message>
+        <source>Favorites First</source>
+        <translation>Favourites First</translation>
+    </message>
+    <message>
+        <source>FAVORITES</source>
+        <translation>FAVOURITES</translation>
+    </message>
+    <message>
+        <source>Shadow Color</source>
+        <translation>Shadow Colour</translation>
+    </message>
+    <message>
+        <source>The color of the remote control&apos;s cursor.</source>
+        <translation>The colour of the remote control&apos;s cursor.</translation>
+    </message>
+    <message>
+        <source>The primary text color.</source>
+        <translation>The primary text colour.</translation>
+    </message>
+    <message>
+        <source>The secondary text color.</source>
+        <translation>The secondary text colour.</translation>
+    </message>
+    <message>
+        <source>Highlighted Color</source>
+        <translation>Highlighted Colour</translation>
+    </message>
+    <message>
+        <source>Colors</source>
+        <translation>Colours</translation>
+    </message>
+    <message>
+        <source>Change the colors of elements in the app.</source>
+        <translation>Change the colours of elements in the app.</translation>
+    </message>
+    <message>
+        <source>Colors used across multiple screens.</source>
+        <translation>Colours used across multiple screens.</translation>
+    </message>
+    <message>
+        <source>The base background color. Background images are layered on top of this color.</source>
+        <translation>The base background colour. Background images are layered on top of this colour.</translation>
+    </message>
+    <message>
+        <source>Colors specific to the watched check mark &amp; unplayed count box.</source>
+        <translation>Colours specific to the watched check mark &amp; unplayed count box.</translation>
+    </message>
+    <message>
+        <source>The background color of the check mark &amp; unplayed count shown in the top right corner of items.</source>
+        <translation>The background colour of the check mark &amp; unplayed count shown in the top right corner of items.</translation>
+    </message>
+    <message>
+        <source>The color of the unplayed count number.</source>
+        <translation>The colour of the unplayed count number.</translation>
+    </message>
+    <message>
+        <source>The color of the watched check mark.</source>
+        <translation>The colour of the watched check mark.</translation>
+    </message>
+    <message>
+        <source>Colors specific to dialog popups</source>
+        <translation>Colours specific to dialogue popups</translation>
+    </message>
+    <message>
+        <source>The background color for all dialog popups.</source>
+        <translation>The background colour for all dialogue popups.</translation>
+    </message>
+    <message>
+        <source>The text color for bold text.</source>
+        <translation>The text colour for bold text.</translation>
+    </message>
+    <message>
+        <source>The color of the thin border line under the header text.</source>
+        <translation>The colour of the thin border line under the header text.</translation>
+    </message>
+    <message>
+        <source>The text color for the item the cursor is over.</source>
+        <translation>The text colour for the item the cursor is over.</translation>
+    </message>
+    <message>
+        <source>Text Color</source>
+        <translation>Text Colour</translation>
+    </message>
+    <message>
+        <source>The text color for title and items the cursor is not over.</source>
+        <translation>The text colour for title and items the cursor is not over.</translation>
+    </message>
+    <message>
+        <source>The text color for the author in the What&apos;s New popup.</source>
+        <translation>The text colour for the author in the What&apos;s New popup</translation>
+    </message>
+    <message>
+        <source>Colors specific to the home screen</source>
+        <translation>Colours specific to the home screen</translation>
+    </message>
+    <message>
+        <source>The color of the star icon in the My List library item.</source>
+        <translation>The colour of the star icon in the My List library item.</translation>
+    </message>
+    <message>
+        <source>The text color of the headers of each row.</source>
+        <translation>The text colour of the headers of each row.</translation>
+    </message>
+    <message>
+        <source>The background color of items. Only seen if no image loads on top of it.</source>
+        <translation>The background colour of items. Only seen if no image loads on top of it.</translation>
+    </message>
+    <message>
+        <source>The color of the watched portion of the progress bar.</source>
+        <translation>The colour of the watched portion of the progress bar.</translation>
+    </message>
+    <message>
+        <source>The background color of the progress bar.</source>
+        <translation>The background colour of the progress bar.</translation>
+    </message>
+    <message>
+        <source>The text color of the second line displayed under items.</source>
+        <translation>The text colour of the second line displayed under items.</translation>
+    </message>
+    <message>
+        <source>The text color of the first line displayed under items.</source>
+        <translation>The text colour of the first line displayed under items.</translation>
+    </message>
+    <message>
+        <source>The text color of the user&apos;s name in the header.</source>
+        <translation>The text colour of the user&apos;s name in the header.</translation>
+    </message>
+    <message>
+        <source>Use the style below whenever HDR content is playing. White is much brighter in HDR than in SDR, so a dimmer color here avoids the glare.</source>
+        <translation>Use the style below whenever HDR content is playing. White is much brighter in HDR than in SDR, so a dimmer colour here avoids the glare.</translation>
+    </message>
+    <message>
+        <source>Color by</source>
+        <translation>Colour by</translation>
+    </message>
+    <message>
+        <source>Dialog Popups</source>
+        <translation>Dialogue Popups</translation>
     </message>
 </context>
 </TS>
