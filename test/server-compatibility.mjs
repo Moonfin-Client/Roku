@@ -262,7 +262,7 @@ source += '\n' + (await readFile('source/utils/liveTvGuide.bs', 'utf8')).replace
 source += '\n' + await readFile('test/live-tv-guide.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/recordAiring.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/record-airing.bs', 'utf8');
-for (const [file, test] of [['source/utils/heldSeek.bs', 'test/held-seek.bs'], ['source/utils/secondarySubtitle.bs', 'test/secondary-subtitle.bs'], ['source/utils/liveWindow.bs', 'test/live-window.bs'], ['source/utils/subtitleText.bs', 'test/subtitle-text.bs'], ['source/utils/osdControls.bs', 'test/osd-controls.bs']]) {
+for (const [file, test] of [['source/utils/heldSeek.bs', 'test/held-seek.bs'], ['source/utils/secondarySubtitle.bs', 'test/secondary-subtitle.bs'], ['source/utils/liveWindow.bs', 'test/live-window.bs'], ['source/utils/subtitleText.bs', 'test/subtitle-text.bs'], ['source/utils/osdControls.bs', 'test/osd-controls.bs'], ['source/utils/audioOffset.bs', 'test/audio-offset.bs']]) {
     source += '\n' + (await readFile(file, 'utf8')).replace(/^import .*$/gm, '') + '\n' + await readFile(test, 'utf8');
 }
 source += '\n' + await readFile('test/server-date.bs', 'utf8');
@@ -507,7 +507,7 @@ const playstateWrites = await readFile('components/PlaystateTask.bs', 'utf8');
 assert.match(playstateWrites, /APIRequestForServer\([^]*?"UserPlayedItems\/" \+ itemId/, 'Remote playstate writes use canonical routes');
 assert.doesNotMatch(playstateWrites, /normalizedUrl \+ "\/Users\//, 'Remote playstate writes do not concatenate legacy routes');
 assert.match(playstateWrites, /resp\.AddHeader\("Content-Type", "application\/json"\)\s+code = requestResponse\(resp, "POST", params\)\.status\s+closeEmbyPlayback\(serverData, requestParams, code >= 200 and code < 300\)/, 'A stop the server took isnt followed by a second close of its live stream');
-assert.match(await readFile('components/video/VideoPlayerView.bs', 'utf8'), /sendPlaystate\(state, params, state = "stop" and isValidAndNotEmpty\(params\.LiveStreamId\)\)/, 'A live stop goes on a task of its own');
+assert.match(await readFile('components/video/VideoPlayerView.bs', 'utf8'), /sendPlaystate\(state, params, state = "stop" and \(isValidAndNotEmpty\(params\.LiveStreamId\) or /, 'A live stop goes on a task of its own');
 
 const signOut = (await readFile('source/api/userauth.bs', 'utf8')).match(/sub SignOut\([^]*?end sub/)[0];
 assert.match(signOut, /m\.global\.removeField\("collectionOwners"\)/, 'Signing out drops the collections the last account was told about');
@@ -791,7 +791,7 @@ process.stdout.write('PASS: subtitle burn-in wiring (2 checks)\n');
 const playerView = await readFile('components/video/VideoPlayerView.bs', 'utf8');
 assert.equal(playerView.match(/m\.LoadMetaDataTask\.control = TaskControl\.RUN/g).length, 1, 'Only runLoad starts the load task');
 assert.match(playerView, /isValid\(m\.liveChannel\) and isStringEqual\(m\.liveChannel\.id, m\.channelSwitch\.target\.Id\)/, 'A channel switch succeeds on the channel that came back');
-assert.match(videoLoader, /if m\.top\.abandoned\s+releaseAbandonedLiveStream\(loaded\)\s+return\s+end if\s+m\.top\.content = \[loaded\]/, 'A load the player set aside closes its stream instead of handing it over');
+assert.match(videoLoader, /if m\.top\.abandoned\s+releaseAbandonedLiveStream\(loaded\)[^]*?return\s+end if\s+m\.top\.content = \[loaded\]/, 'A load the player set aside closes its stream instead of handing it over');
 process.stdout.write('PASS: live load wiring (3 checks)\n');
 
 // Picking an episode from the player's browser reports the old one stopped and resumes the pick
@@ -1762,6 +1762,45 @@ assert.match((await readFile('components/watchParty/WatchPartyPanel.bs', 'utf8')
 assert.match(partyScreen, /if isReturning then m\.wpRows\.focus = -1/, 'Back from the player starts the lobby on its first button');
 assert.match(partyScreen.match(/sub releaseKeyboard\(\)[^]*?end sub/)[0], /m\.top\.setFocus\(true\)/, 'The screen takes focus back when its keyboard closes');
 process.stdout.write('PASS: Watch Parties player and focus wiring (5 checks)\n');
+
+// The audio offset: Offset in the audio picker opens the offset panel for the audio, closing it saves
+// the device's offset and loads the title again with it, and a load with an offset plays Moonbase's
+// moved stream on the title's own clock, with its subtitles and reports following that clock
+const offsetPicker = await readFile('components/movies/AudioSelector.bs', 'utf8');
+const offsetViews = await readFile('components/manager/ViewCreator.bs', 'utf8');
+const offsetPlayer = await readFile('components/video/VideoPlayerView.bs', 'utf8');
+const offsetLoad = await readFile('components/ItemGrid/LoadVideoContentTask.bs', 'utf8');
+const offsetPlaystate = await readFile('components/PlaystateTask.bs', 'utf8');
+assert.match(offsetPicker, /if m\.top\.showOffset[^]*?offset\.action = "offset"/, 'The audio picker offers Offset when asked to');
+assert.match(offsetPicker, /if selectedItem\.action = "offset"\s+m\.top\.offsetRequested = true\s+m\.top\.visible = false/, 'and picking it asks for the panel');
+assert.match(offsetViews, /m\.audioSelector\.showOffset = m\.view\.audioOffsetEligible = true/, 'Offset shows only on a title that can take the moved stream');
+assert.match(offsetViews, /sub onAudioOffsetRequested\(\)[^]*?m\.view\.findNode\("osd"\)\.action = "showaudiosyncmenu"/, 'and opens the audio offset panel');
+assert.match(offsetViews, /sub onAudioSelectorVisibleChanged\(\)[^]*?if m\.view\.findNode\("subtitleOffsetOverlay"\)\.visible then return/, 'which keeps focus as the picker closes');
+assert.match(offsetPlayer, /if action = "showaudiosyncmenu"\s+handleShowAudioSyncAction\(\)/, 'The player opens the panel for the audio');
+assert.match(offsetPlayer, /sub onSubtitleOffsetChanged\(\)\s+if m\.offsetTarget = "audio"\s+m\.audioOffsetTimer\.control = "stop"\s+m\.audioOffsetTimer\.control = "start"\s+return/, 'Stepping the audio offset leaves the subtitles alone and waits for the viewer to stop');
+assert.match(offsetPlayer, /sub onAudioOffsetSettled\(\)[^]*?applyAudioOffset\(m\.subtitleOffsetOverlay\.offset\)/, 'and then puts it to use with the panel still up');
+assert.match(await readFile('components/video/VideoPlayerView.xml', 'utf8'), /<Timer id="audioOffsetTimer" duration="0\.35" repeat="false" \/>/, 'after the same 350 ms pause as the other offsets');
+assert.match(offsetPlayer, /m\.subtitleOffsetOverlay\.docked = true\s+m\.subtitleOffsetOverlay\.step = AUDIO_OFFSET_STEP_MS\s+m\.subtitleOffsetOverlay\.limit = AUDIO_OFFSET_LIMIT_MS/, 'The audio panel docks along the bottom with its own step and limit');
+assert.match(offsetPlayer, /if m\.subtitleOffsetOverlay\.visible then m\.subtitleOffsetOverlay\.setFocus\(true\)/, 'A reload with the panel up leaves it the remote');
+assert.match(await readFile('components/video/SubtitleOffsetOverlay.bs', 'utf8'), /if not m\.top\.visible\s+stopRepeat\(\)[^]*?if m\.top\.isInFocusChain\(\) then m\.top\.setFocus\(false\)/, 'and a hidden panel lets go of it');
+assert.match(offsetPlayer, /sub onSubtitleOffsetClosed\(\)[^]*?if applyAudioOffset\(m\.subtitleOffsetOverlay\.offset\) then return/, 'Closing the panel puts the audio offset to use');
+assert.match(offsetPlayer, /function applyAudioOffset\([^]*?set_setting\(AUDIO_OFFSET_SETTING[^]*?if m\.top\.position > 0 then from = mediaPosition\(\)\s+m\.audioOffsetReload = m\.subtitleOffsetOverlay\.visible\s+m\.requestedAudioOffsetMs = offsetMs\s+reloadFrom\(from\)/, 'by saving it for the device and loading again from where play is');
+assert.match(offsetPlayer, /m\.audioOffsetJobId = videoContent\[0\]\.audioOffsetJobId \?\? ""/, 'The player keeps the moved stream\'s id');
+assert.match(offsetPlayer, /"PositionTicks": int\(reportedPosition\(\)\) \* 10000000&/, 'and reports where play is in the title');
+assert.match(offsetPlayer, /if state = "stop" and m\.audioOffsetJobId <> "" then params\.AudioOffsetJobId = m\.audioOffsetJobId/, 'A stop names the moved stream');
+assert.match(offsetPlaystate, /moonfinPlugin\.StopAudioOffset\(requestParams\.AudioOffsetJobId\)/, 'so Moonbase stops making it');
+assert.match(offsetLoad, /if playsWithAudioOffset\(video, meta, mediaSourceId, audio_stream_idx, serverData\) then return\s+' Direct play video/, 'A load tries the moved stream before direct play');
+assert.match(offsetLoad, /video\.timelineOffset = streamStart[^]*?video\.content\.PlayStart = audioOffset\.PlayStart\(video\.content\.PlayStart, streamStart\)/, 'and plays it on the title\'s clock from where the viewer was');
+assert.match(offsetLoad, /shiftSubtitlesToStream\(video, streamStartTicks&\)/, 'with its subtitles moved to the stream\'s start');
+assert.match(offsetPlayer, /if not m\.audioOffsetReload then hidesyncmenuAction\(\)/, 'and the reload it starts doesn\'t close it');
+assert.match(offsetPlayer, /if offsetMs = m\.requestedAudioOffsetMs or not m\.top\.audioOffsetEligible then return false/, 'A change is weighed against the latest load asked for, and only on a title that can take it');
+assert.match(offsetPlayer, /m\.subtitleOffsetOverlay\.offset = audioOffset\.FromStored\(get_setting\(AUDIO_OFFSET_SETTING\)\)\s+m\.offsetTarget = "audio"/, 'Opening the panel doesn\'t count as a change');
+assert.match(offsetPlayer, /sub hidesyncmenuAction\(\)[^]*?if m\.offsetTarget = "audio"\s+m\.audioOffsetTimer\.control = "stop"/, 'A panel closed by something else drops its waiting change');
+assert.match(offsetPlayer, /isValidAndNotEmpty\(params\.LiveStreamId\) or isValidAndNotEmpty\(params\.AudioOffsetJobId\)/, 'A stop that ends the moved stream gets its own task');
+assert.match(offsetPlayer, /if not m\.isTranscoded and m\.audioOffsetJobId = "" and audioSwitchesInPlace/, 'A track change on the moved stream loads it again');
+assert.match(offsetLoad, /if \(m\.top\.playbackMethod \?\? ""\) <> "" then return false/, 'A retry steps down instead of asking for the moved stream again');
+assert.match(offsetLoad, /releaseAbandonedLiveStream\(loaded\)[^]*?moonfinPlugin\.StopAudioOffset\(chainLookupReturn\(loaded, "audioOffsetJobId", ""\)\)/, 'An abandoned load stops the moved stream it started');
+process.stdout.write('PASS: audio offset wiring (29 checks)\n');
 
 // The watchlist pages by Seerr's titles alone, however many library titles lead it on Silo, and names its shows
 const favoritesTask = await readFile('components/favorites/LoadFavoritesTask.bs', 'utf8');

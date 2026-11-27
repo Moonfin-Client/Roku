@@ -15,6 +15,7 @@ import "pkg:/source/enums/SubtitleSelection.bs"
 import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/enums/TimerControl.bs"
 import "pkg:/source/enums/VideoControl.bs"
+import "pkg:/source/utils/audioOffset.bs"
 import "pkg:/source/utils/blockedContent.bs"
 import "pkg:/source/utils/calendarEntries.bs"
 import "pkg:/source/utils/config.bs"
@@ -66,6 +67,12 @@ const CINEMA_SKIP_SECONDS = 10
 sub init()
     m.timelineOffset = 0
     m.mediaRuntime = 0
+    ' The audio offset the stream that plays was made with, and Moonbase's id for it
+    m.audioOffsetMs = 0
+    ' The offset the latest load was asked for, which may still be on its way
+    m.requestedAudioOffsetMs = 0
+    m.audioOffsetJobId = ""
+    m.audioOffsetReload = false
     m.top.observeField("availableAudioTracks", "applyChosenAudioTrack")
 
     ' An administrator ending this playback on Silo closes the player
@@ -242,6 +249,8 @@ sub init()
     m.subtitleOffsetOverlay = m.top.findNode("subtitleOffsetOverlay")
     m.subtitleOffsetOverlay.observeField("offset", "onSubtitleOffsetChanged")
     m.subtitleOffsetOverlay.observeField("closed", "onSubtitleOffsetClosed")
+    m.audioOffsetTimer = m.top.findNode("audioOffsetTimer")
+    m.audioOffsetTimer.observeField("fire", "onAudioOffsetSettled")
     m.pendingEmbeddedSubtitle = invalid
     m.top.observeField("availableSubtitleTracks", "applyEmbeddedSubtitle")
     m.subtitleAppearance = m.top.findNode("subtitleAppearance")
@@ -956,6 +965,11 @@ sub onOSDAction()
         return
     end if
 
+    if action = "showaudiosyncmenu"
+        handleShowAudioSyncAction()
+        return
+    end if
+
     if action = "showsubtitleappearance" or action = "showsecondaryappearance"
         handleHideAction(false)
         m.subtitleAppearance.isHdr = m.isHdrOutput
@@ -1010,6 +1024,9 @@ sub handleShowsyncmenuAction(secondary = false as boolean)
 
     ' The panel moves whichever track opened it
     m.offsetTarget = secondary ? "secondary" : "primary"
+    m.subtitleOffsetOverlay.title = ""
+    m.subtitleOffsetOverlay.docked = false
+    m.subtitleOffsetOverlay.step = 100
     cues = []
     if secondary
         m.subtitleOffsetOverlay.limit = SECONDARY_DELAY_LIMIT_MS
@@ -1025,14 +1042,65 @@ sub handleShowsyncmenuAction(secondary = false as boolean)
     m.subtitleOffsetOverlay.visible = true
 end sub
 
+' The same panel moves the audio, docked along the bottom so the picture and the sound can be
+' judged while it's open. Each change starts a new stream from the server, so a change is put to
+' use once the viewer stops stepping for a moment, and the panel stays up for the next one.
+sub handleShowAudioSyncAction()
+    handleHideAction(false)
+
+    m.subtitleOffsetOverlay.title = tr("Audio Offset")
+    m.subtitleOffsetOverlay.docked = true
+    m.subtitleOffsetOverlay.step = AUDIO_OFFSET_STEP_MS
+    m.subtitleOffsetOverlay.limit = AUDIO_OFFSET_LIMIT_MS
+    m.subtitleOffsetOverlay.cues = []
+    ' Loading the saved value isn't a change of it, so the panel is aimed at the audio only after
+    m.subtitleOffsetOverlay.offset = audioOffset.FromStored(get_setting(AUDIO_OFFSET_SETTING))
+    m.offsetTarget = "audio"
+    m.subtitleOffsetOverlay.visible = true
+    m.subtitleOffsetOverlay.setFocus(true)
+end sub
+
+sub onAudioOffsetSettled()
+    if m.offsetTarget <> "audio" then return
+    applyAudioOffset(m.subtitleOffsetOverlay.offset)
+end sub
+
+' Keeps the offset for this device and, when the stream that plays was made with another one,
+' loads the title again from here with the new one. True when it does
+function applyAudioOffset(offsetMs as integer) as boolean
+    m.audioOffsetTimer.control = "stop"
+    offsetMs = audioOffset.Clamp(offsetMs)
+    set_setting(AUDIO_OFFSET_SETTING, offsetMs.ToStr())
+    ' Compared with the latest load asked for rather than the stream playing, so stepping back while
+    ' a load is on its way still loads again
+    if offsetMs = m.requestedAudioOffsetMs or not m.top.audioOffsetEligible then return false
+    ' A change made while the last one still loads has no position yet, so it goes on from where play got to
+    from = m.playedTo
+    if m.top.position > 0 then from = mediaPosition()
+    m.audioOffsetReload = m.subtitleOffsetOverlay.visible
+    m.requestedAudioOffsetMs = offsetMs
+    reloadFrom(from)
+    return true
+end function
+
 sub hidesyncmenuAction()
     if not m.subtitleOffsetOverlay.visible then return
+    ' A step still waiting to be put to use belongs to the title the panel was opened on
+    if m.offsetTarget = "audio"
+        m.audioOffsetTimer.control = "stop"
+        m.offsetTarget = "primary"
+    end if
 
     m.subtitleOffsetOverlay.visible = false
     m.top.setFocus(true)
 end sub
 
 sub onSubtitleOffsetChanged()
+    if m.offsetTarget = "audio"
+        m.audioOffsetTimer.control = "stop"
+        m.audioOffsetTimer.control = "start"
+        return
+    end if
     if m.offsetTarget = "secondary"
         m.top.secondarySubtitleDelay = m.subtitleOffsetOverlay.offset
         return
@@ -1055,6 +1123,11 @@ end sub
 ' Closing hands back to the controls, the way the other clients do
 sub onSubtitleOffsetClosed()
     m.subtitleOffsetOverlay.visible = false
+    if m.offsetTarget = "audio"
+        m.offsetTarget = "primary"
+        m.top.setFocus(true)
+        if applyAudioOffset(m.subtitleOffsetOverlay.offset) then return
+    end if
     showOSD()
 end sub
 
@@ -1340,7 +1413,8 @@ sub onAudioIndexChange()
 
     ' Direct play already holds every track, so it switches without loading the stream again. A
     ' track the device cant play from the file goes back to the server, which can transcode it.
-    if not m.isTranscoded and audioSwitchesInPlace(audioStreamAt(m.top.audioIndex))
+    ' The moved-audio stream carries only the track it was made with
+    if not m.isTranscoded and m.audioOffsetJobId = "" and audioSwitchesInPlace(audioStreamAt(m.top.audioIndex))
         m.LoadMetaDataTask.selectedAudioStreamIndex = m.top.audioIndex
         applyChosenAudioTrack()
         return
@@ -1624,7 +1698,9 @@ sub onVideoContentLoaded(event as object)
 
     stopLoadingSpinner()
 
-    hidesyncmenuAction()
+    ' A reload the audio offset panel started keeps the panel up for the next change
+    if not m.audioOffsetReload then hidesyncmenuAction()
+    m.audioOffsetReload = false
 
     ' A blocked rating ends it before anything plays, and quietly, the same as backing out
     if isValid(videoContent) and chainLookupReturn(videoContent[0], "blocked", false) = true
@@ -1666,6 +1742,10 @@ sub onVideoContentLoaded(event as object)
     m.copiesVideo = videoContent[0].copiesVideo = true
     m.timelineOffset = videoContent[0].timelineOffset ?? 0
     m.mediaRuntime = videoContent[0].mediaRuntime ?? 0
+    m.audioOffsetMs = videoContent[0].audioOffsetMs ?? 0
+    m.requestedAudioOffsetMs = m.audioOffsetMs
+    m.audioOffsetJobId = videoContent[0].audioOffsetJobId ?? ""
+    m.top.audioOffsetEligible = videoContent[0].audioOffsetEligible = true
     m.videoCodec = videoContent[0].videoCodec ?? ""
     m.streamSummary = streamSummary(videoContent[0])
     diagnostics.Playback(`Playing ${m.streamSummary}`)
@@ -1837,6 +1917,8 @@ sub onVideoContentLoaded(event as object)
     restoreSecondarySubtitle()
 
     m.top.setFocus(true)
+    ' A new audio offset loads with its panel still up, which keeps the remote
+    if m.subtitleOffsetOverlay.visible then m.subtitleOffsetOverlay.setFocus(true)
 
     ' Hold the play command rather than starting and pausing, which would trip the
     ' pause overlay and the unpause rewind
@@ -2790,6 +2872,11 @@ sub seekMedia(target as float)
         m.top.seek = target - m.timelineOffset
         return
     end if
+    reloadFrom(target)
+end sub
+
+' Loads the item again from a point of the title
+sub reloadFrom(target as float)
     holdSkipPrompts()
     m.global.queueManager.callFunc("setTopStartingPoint", int(target) * 10000000&)
     stopForReload()
@@ -2841,17 +2928,28 @@ sub ReportPlayback(state = "update" as string)
     end if
 
     if inArray(["stop", "finished"], state) then restoreCaptionMode()
+    ' The server stops making the moved-audio stream once nothing plays it
+    if state = "stop" and m.audioOffsetJobId <> "" then params.AudioOffsetJobId = m.audioOffsetJobId
 
     ' A stop that lets a live stream go gets a task of its own, since a progress report on the
     ' shared one can take its place and leave the server holding the tuner
-    sendPlaystate(state, params, state = "stop" and isValidAndNotEmpty(params.LiveStreamId))
+    ' A stop that has to let the moved-audio stream go too gets its own task, so the next report
+    ' can't take its place
+    sendPlaystate(state, params, state = "stop" and (isValidAndNotEmpty(params.LiveStreamId) or isValidAndNotEmpty(params.AudioOffsetJobId)))
 end sub
+
+' Where the server is told play is. A moved-audio stream starts partway into the title, so its
+' clock is counted from there
+function reportedPosition() as float
+    if m.audioOffsetJobId <> "" then return mediaPosition()
+    return m.top.position
+end function
 
 function playbackReportParams() as object
     params = {
         "ItemId": m.top.id,
         "PlaySessionId": m.top.PlaySessionId,
-        "PositionTicks": int(m.top.position) * 10000000&, 'Ensure a LongInteger is used
+        "PositionTicks": int(reportedPosition()) * 10000000&, 'Ensure a LongInteger is used
         "IsPaused": isStringEqual(m.top.state, MediaPlaybackState.PAUSED),
         "UserId": m.global.session.user.id
     }

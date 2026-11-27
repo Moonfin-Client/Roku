@@ -1,6 +1,7 @@
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/api/Items.bs"
+import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/api/userauth.bs"
 import "pkg:/source/enums/ImageType.bs"
 import "pkg:/source/enums/ItemType.bs"
@@ -8,9 +9,11 @@ import "pkg:/source/enums/MediaSegmentType.bs"
 import "pkg:/source/enums/PlaybackMethod.bs"
 import "pkg:/source/enums/String.bs"
 import "pkg:/source/enums/SubtitleSelection.bs"
+import "pkg:/source/utils/audioOffset.bs"
 import "pkg:/source/utils/blockedContent.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
+import "pkg:/source/utils/diagnostics.bs"
 import "pkg:/source/utils/embyFeatures.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/trackLabels.bs"
@@ -248,6 +251,8 @@ sub loadItems()
     ' play or stop it, and the player may already be gone, so it is closed here.
     if m.top.abandoned
         releaseAbandonedLiveStream(loaded)
+        ' and a moved-audio stream it started would otherwise run on at the server
+        moonfinPlugin.StopAudioOffset(chainLookupReturn(loaded, "audioOffsetJobId", ""))
         return
     end if
     m.top.content = [loaded]
@@ -677,6 +682,8 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
     video.isHdr = isHdrSource(m.playbackInfo.MediaSources[0])
     addSourceCodecs(video, m.playbackInfo.MediaSources[0])
 
+    if playsWithAudioOffset(video, meta, mediaSourceId, audio_stream_idx, serverData) then return
+
     ' Direct play video
     if video.directPlaySupported
         video.isTranscoded = false
@@ -748,6 +755,65 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
     else
         video.content = authRequest(video.content)
     end if
+end sub
+
+' Plays Moonbase's stream with the audio moved by the device's offset, when there is one and this
+' title can be copied into it. Anything that keeps it from starting leaves the load to play the
+' title as it would without an offset.
+function playsWithAudioOffset(video as object, meta as object, mediaSourceId as dynamic, audioIndex as integer, serverData as dynamic) as boolean
+    video.audioOffsetEligible = false
+    ' A retry after a failed stream steps down to the server's own playback, which the moved stream
+    ' would only take the place of again
+    if (m.top.playbackMethod ?? "") <> "" then return false
+    source = m.playbackInfo.MediaSources[0]
+    fromSilo = isValidAndNotEmpty(source.LookupCI("SiloDelivery"))
+    installed = chainLookupReturn(m.global.session, "pluginInfo.installed", false) = true
+    playable = video.directPlaySupported = true or transcodeCopiesVideo(source.LookupCI("TranscodingUrl") ?? "")
+    if not audioOffset.Eligible(meta.live = true, fromSilo, installed, isValid(serverData), playable) then return false
+    if isHTTPStream() then return false
+    ' The stream carries no subtitle of its own, so one that has to be drawn into the picture can't come with it
+    if video.SelectedSubtitle >= 0 and not isSubtitleStreamText(video.SelectedSubtitle) then return false
+    ' The player offers the offset only on a title that can take it
+    video.audioOffsetEligible = true
+    offsetMs = audioOffset.FromStored(get_setting(AUDIO_OFFSET_SETTING))
+    if offsetMs = 0 then return false
+
+    startTicks& = video.content.PlayStart * 10000000&
+    stream = moonfinPlugin.StartAudioOffset(video.id, toString(mediaSourceId ?? ""), audioIndex, offsetMs, startTicks&)
+    if not isValid(stream)
+        diagnostics.Playback("Audio offset stream unavailable, playing without it")
+        return false
+    end if
+
+    streamStartTicks& = stream.LookupCI("StartTimeTicks") ?? 0
+    streamStart = streamStartTicks& / 10000000#
+    video.isTranscoded = false
+    video.audioOffsetJobId = stream.LookupCI("JobId") ?? ""
+    video.audioOffsetMs = offsetMs
+    video.timelineOffset = streamStart
+    video.mediaRuntime = (stream.LookupCI("RunTimeTicks") ?? 0) / 10000000#
+    video.content.PlayStart = audioOffset.PlayStart(video.content.PlayStart, streamStart)
+    video.content.StreamFormat = "hls"
+    video.content.url = buildURL("/" + stream.LookupCI("Url"))
+    setCertificateAuthority(video.content)
+    video.content = authRequest(video.content)
+    shiftSubtitlesToStream(video, streamStartTicks&)
+    return true
+end function
+
+' The stream starts partway into the title, so its subtitles are asked for from there too
+sub shiftSubtitlesToStream(video as object, startTicks as longinteger)
+    tracks = video.content.SubtitleTracks
+    if isValidAndNotEmpty(tracks)
+        for each track in tracks
+            if isString(track.TrackName) then track.TrackName = audioOffset.ShiftSubtitleUrl(track.TrackName, startTicks)
+        end for
+        video.content.SubtitleTracks = tracks
+    end if
+    for each subtitle in video.fullSubtitleData ?? []
+        name = chainLookupReturn(subtitle, "Track.TrackName", "")
+        if name <> "" then subtitle.Track.TrackName = audioOffset.ShiftSubtitleUrl(name, startTicks)
+    end for
 end sub
 
 ' Silo's stream addresses name no file type, so the plan says what the player gets. A stream that
