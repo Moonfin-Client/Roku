@@ -120,6 +120,41 @@ namespace silo
         return { hdr10: hdr10, hdr10_plus: hdr10Plus, hlg: hlg, dolby_vision_profiles: dolbyVision }
     end function
 
+    ' The bit depths this Roku decodes per codec, as Silo's video_decode. Roku decodes H.264 Main and
+    ' High, never High 10: a bare claim lets Silo copy a 10-bit file, which plays black. HEVC and VP9
+    ' follow the profiles the device probed (Main 10, Profile 2), AV1 is 8 and 10-bit wherever it
+    ' plays (as Silo's own Roku app, since its profile probe often fails). Silo names the file's codec
+    ' h264 or hevc whatever it's called, and copies only what codecs_video names
+    function VideoDecode(codecProfiles as object, videoCodecs as object) as object
+        out = []
+        if siloContains(videoCodecs, "h264") then out.Push({ codec: "h264", bit_depths: [8], hardware: true })
+        tenBit = { hevc: "main 10", vp9: "profile 2" }
+        eightBit = { hevc: "main", vp9: "profile 0" }
+        for each codec in ["hevc", "vp9"]
+            if siloContains(videoCodecs, codec)
+                probed = []
+                for each p in codecProfiles
+                    if p.Type = "Video" and siloContains(silo.Csv(p.Codec), codec)
+                        for each c in silo.ProfilesOf(p.Conditions)
+                            if c.Property = "VideoProfile" and c.Condition = "EqualsAny"
+                                for each v in (c.Value ?? "").ToStr().Split("|")
+                                    probed.Push(LCase(v.Trim()))
+                                end for
+                            end if
+                        end for
+                    end if
+                end for
+                if siloContains(probed, tenBit[codec])
+                    out.Push({ codec: codec, bit_depths: [8, 10], hardware: true })
+                else if siloContains(probed, eightBit[codec])
+                    out.Push({ codec: codec, bit_depths: [8], hardware: true })
+                end if
+            end if
+        end for
+        if siloContains(videoCodecs, "av1") then out.Push({ codec: "av1", bit_depths: [8, 10], hardware: true })
+        return out
+    end function
+
     function ProfileLimits(codecProfiles as object, kind as string, property as string) as object
         out = []
         for each p in codecProfiles
@@ -203,6 +238,8 @@ namespace silo
         hdr = silo.HdrDetails(codecProfiles, videoCodecs)
         anyHdr = hdr.hdr10 or hdr.hlg or hdr.hdr10_plus or hdr.dolby_vision_profiles.Count() > 0
         clientCapabilities = { video_evidence: "declared", audio_evidence: "declared", codecs_video: videoCodecs, codecs_video_hardware: videoCodecs, codecs_audio: audioCodecs, containers: containers, hdr: anyHdr, hdr_details: hdr }
+        decode = silo.VideoDecode(codecProfiles, videoCodecs)
+        if decode.Count() > 0 then clientCapabilities.video_decode = decode
         widths = silo.ProfileLimits(codecProfiles, "Video", "Width")
         if widths.Count() > 0
             widest = 0
